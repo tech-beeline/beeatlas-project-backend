@@ -17,6 +17,8 @@ import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceResultDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceUpsertDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationResultDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationUpsertDTO;
+import ru.beeline.projectbackend.dto.usecase.OperationUseCaseDTO;
+import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
@@ -27,16 +29,27 @@ import ru.beeline.projectbackend.exception.NotFoundException;
 import ru.beeline.projectbackend.exception.ValidationException;
 import ru.beeline.projectbackend.repository.ArtifactBranchRepository;
 import ru.beeline.projectbackend.repository.ProjectRepository;
+import ru.beeline.projectbackend.repository.UseCaseByOperationProjection;
 import ru.beeline.projectbackend.repository.UsOperationRelationRepository;
 import ru.beeline.projectbackend.repository.UseCaseRepository;
 import ru.beeline.projectbackend.utils.InterfaceCodeGenerator;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NavigableSet;
+import java.util.Set;
+import java.util.TreeSet;
+
+import static ru.beeline.projectbackend.utils.Constant.BLANK_OPERATION_ID;
+import static ru.beeline.projectbackend.utils.Constant.EMPTY_OPERATION_IDS;
+import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 
 @Service
 @Slf4j
@@ -85,6 +98,67 @@ public class UseCaseService {
                 .code(useCase.getCode())
                 .projectBranchId(useCase.getProjectBranchId())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<OperationUseCasesResponseDTO> findUseCasesByOperations(List<Integer> request) {
+        List<Integer> operationIds = validateAndDedupe(request);
+        log.info("UseCase by operations: обработка, методов={}", operationIds.size());
+        List<UseCaseByOperationProjection> rows =
+                usOperationRelationRepository.findUseCasesByOperationIds(operationIds);
+        Set<Integer> requested = new HashSet<>(operationIds);
+        Map<Integer, NavigableSet<Integer>> ucIdsByOperation = new LinkedHashMap<>();
+        Map<Integer, String> nameByUcId = new HashMap<>();
+        for (UseCaseByOperationProjection row : rows) {
+            if (row.getUcId() == null) {
+                continue;
+            }
+            nameByUcId.put(row.getUcId(), row.getUcName());
+            collectUseCase(ucIdsByOperation, requested, row.getReqOperationId(), row.getUcId());
+            collectUseCase(ucIdsByOperation, requested, row.getRelatedReqOperationId(), row.getUcId());
+        }
+        List<OperationUseCasesResponseDTO> response = new ArrayList<>(operationIds.size());
+        for (Integer operationId : operationIds) {
+            NavigableSet<Integer> ucIds = ucIdsByOperation.get(operationId);
+            List<OperationUseCaseDTO> useCases = ucIds == null ? List.of() : ucIds.stream()
+                    .map(ucId -> OperationUseCaseDTO.builder()
+                            .id(ucId)
+                            .name(nameByUcId.get(ucId))
+                            .build())
+                    .toList();
+            response.add(OperationUseCasesResponseDTO.builder()
+                    .operationId(operationId)
+                    .useCases(useCases)
+                    .build());
+        }
+        return response;
+    }
+
+    private void collectUseCase(Map<Integer, NavigableSet<Integer>> ucIdsByOperation, Set<Integer> requested,
+                                Integer operationId, Integer ucId) {
+        if (operationId != null && requested.contains(operationId)) {
+            ucIdsByOperation.computeIfAbsent(operationId, ignored -> new TreeSet<>()).add(ucId);
+        }
+    }
+
+    private List<Integer> validateAndDedupe(List<Integer> request) {
+        if (request == null) {
+            throw new ValidationException(MISSING_REQUEST_BODY);
+        }
+        if (request.isEmpty()) {
+            throw new ValidationException(EMPTY_OPERATION_IDS);
+        }
+        List<Integer> operationIds = new ArrayList<>(request.size());
+        Set<Integer> unique = new LinkedHashSet<>();
+        for (Integer operationId : request) {
+            if (operationId == null) {
+                throw new ValidationException(BLANK_OPERATION_ID);
+            }
+            if (unique.add(operationId)) {
+                operationIds.add(operationId);
+            }
+        }
+        return operationIds;
     }
 
     private String normalizeBranch(String branch) {

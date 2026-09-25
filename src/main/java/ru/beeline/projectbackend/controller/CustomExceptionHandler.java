@@ -3,11 +3,14 @@
  */
 package ru.beeline.projectbackend.controller;
 
-import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -25,16 +28,37 @@ import ru.beeline.projectbackend.exception.NotFoundException;
 import ru.beeline.projectbackend.exception.S3Exception;
 import ru.beeline.projectbackend.exception.ValidationException;
 
+import static ru.beeline.projectbackend.utils.Constant.BLANK_OPERATION_ID;
+import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 
 @ControllerAdvice
 @Slf4j
 public class CustomExceptionHandler {
+
+    private static final String USE_CASES_BY_OPERATIONS_PATH = "/use-cases/by-operations";
 
     private static ResponseEntity<Object> errorResponse(HttpStatus status, String message) {
         return ResponseEntity
                 .status(status)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponseDTO(message));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Object> handleUnreadableBody(HttpMessageNotReadableException e,
+                                                       HttpServletRequest request) {
+        String message = MISSING_REQUEST_BODY;
+        if (request.getRequestURI() != null && request.getRequestURI().endsWith(USE_CASES_BY_OPERATIONS_PATH)
+                && isElementError(e)) {
+            message = BLANK_OPERATION_ID;
+        }
+        log.error(message);
+        return errorResponse(HttpStatus.BAD_REQUEST, message);
+    }
+
+    private boolean isElementError(HttpMessageNotReadableException e) {
+        Throwable cause = e.getCause();
+        return cause instanceof JsonMappingException mappingException && !mappingException.getPath().isEmpty();
     }
 
     @ExceptionHandler(ConflictException.class)
