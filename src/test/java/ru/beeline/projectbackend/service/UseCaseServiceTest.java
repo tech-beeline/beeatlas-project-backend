@@ -22,6 +22,7 @@ import ru.beeline.projectbackend.domain.UseCase;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceResultDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceUpsertDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationResultDTO;
+import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
@@ -32,6 +33,7 @@ import ru.beeline.projectbackend.exception.NotFoundException;
 import ru.beeline.projectbackend.exception.ValidationException;
 import ru.beeline.projectbackend.repository.ArtifactBranchRepository;
 import ru.beeline.projectbackend.repository.ProjectRepository;
+import ru.beeline.projectbackend.repository.UseCaseByOperationProjection;
 import ru.beeline.projectbackend.repository.UsOperationRelationRepository;
 import ru.beeline.projectbackend.repository.UseCaseRepository;
 
@@ -46,6 +48,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -283,6 +286,61 @@ class UseCaseServiceTest {
                 .isInstanceOf(ExternalServiceException.class)
                 .hasMessageContaining("op-2");
         verify(usOperationRelationRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("Поиск по операциям: дедубликация id, порядок первого вхождения, use case по возрастанию id")
+    void findsUseCasesByOperations() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(20, 30, 8, "Возврат"),
+                row(20, 10, 8, "Возврат"),
+                row(null, 20, 7, "Оформление заказа"),
+                row(500, 600, 5, "Не попадёт"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any()))
+                .thenReturn(rows);
+
+        List<OperationUseCasesResponseDTO> response =
+                service.findUseCasesByOperations(List.of(20, 99, 20));
+
+        assertThat(response).extracting(OperationUseCasesResponseDTO::getOperationId)
+                .containsExactly(20, 99);
+        assertThat(response.get(0).getUseCases()).extracting(uc -> uc.getId()).containsExactly(7, 8);
+        assertThat(response.get(0).getUseCases().get(0).getName()).isEqualTo("Оформление заказа");
+        assertThat(response.get(0).getUseCases().get(1).getName()).isEqualTo("Возврат");
+        assertThat(response.get(1).getUseCases()).isEmpty();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Integer>> captor = ArgumentCaptor.forClass(List.class);
+        verify(usOperationRelationRepository).findUseCasesByOperationIds(captor.capture());
+        assertThat(captor.getValue()).containsExactly(20, 99);
+    }
+
+    @Test
+    @DisplayName("Поиск по операциям: тело, пустой список и null-элемент — 400 без запроса в БД")
+    void failsOnInvalidOperationsBody() {
+        assertThatThrownBy(() -> service.findUseCasesByOperations(null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Отсутствует тело запроса");
+
+        assertThatThrownBy(() -> service.findUseCasesByOperations(List.of()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Список идентификаторов методов не может быть пустым");
+
+        assertThatThrownBy(() -> service.findUseCasesByOperations(Arrays.asList(20, null)))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Идентификатор метода не может быть пустым");
+
+        verify(usOperationRelationRepository, never()).findUseCasesByOperationIds(any());
+    }
+
+    private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
+                                             Integer ucId, String ucName) {
+        UseCaseByOperationProjection row = mock(UseCaseByOperationProjection.class);
+        when(row.getReqOperationId()).thenReturn(reqOperationId);
+        when(row.getRelatedReqOperationId()).thenReturn(relatedOperationId);
+        when(row.getUcId()).thenReturn(ucId);
+        when(row.getUcName()).thenReturn(ucName);
+        return row;
     }
 
     @SuppressWarnings("unchecked")
