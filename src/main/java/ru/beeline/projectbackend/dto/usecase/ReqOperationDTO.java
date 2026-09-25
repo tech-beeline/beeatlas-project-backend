@@ -22,6 +22,10 @@ public class ReqOperationDTO {
     @Schema(description = "Alias (cmdb) продукта, которому принадлежит операция (обязательное)")
     private String product;
 
+    @Schema(description = "Alias (cmdb) планируемого продукта; внутри группы (interfaceCode, product) "
+            + "значения должны совпадать, иначе 400")
+    private String productPlanned;
+
     @Schema(description = "Код интерфейса; если не задан — интерфейс получает код CRC32 "
             + "от остальных атрибутов операции, и она публикуется отдельным интерфейсом")
     private String interfaceCode;
@@ -40,4 +44,7 @@ public class ReqOperationDTO {
 
     @Schema(description = "Описание самой операции")
     private String descriptionOperation;
+
+    @Schema(description = "Признак планируемой операции")
+    private Boolean isPlanned;
 }

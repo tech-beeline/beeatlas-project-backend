@@ -19,4 +19,5 @@ public class DiscoveredOperationUpsertDTO {
     private String descriptionTc;
     private String tcCode;
     private String descriptionOperation;
+    private Boolean isPlanned;
 }

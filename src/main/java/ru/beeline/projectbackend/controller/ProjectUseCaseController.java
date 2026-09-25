@@ -30,8 +30,6 @@ import ru.beeline.projectbackend.service.UseCaseService;
 
 import java.util.List;
 
-import static ru.beeline.projectbackend.utils.Constant.BLANK_OPERATION_ID;
-import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 
 @RestController
 @RequestMapping("/api/v1/project")
@@ -45,12 +43,14 @@ public class ProjectUseCaseController {
 
     @PutMapping("/{projectId}/use-case")
     @Operation(summary = "Создать или обновить use case проекта",
-            description = "Принимает карточку useCase, шаги useCaseCall и справочник операций reqOperations. "
+            description = "Принимает карточку useCase (включая необязательный biStepCode), шаги useCaseCall и "
+                    + "справочник операций reqOperations (включая необязательные productPlanned и isPlanned). "
                     + "Идентичность use case — пара (ветка проекта, useCase.uid): повторный вызов обновляет "
-                    + "карточку и полностью пересоздаёт состав шагов. Операции метод хранит не у себя: "
-                    + "справочник публикуется в fdm-products (PUT /api/v1/discovered-interface/project/{projectId}"
-                    + "?source=ProjectTask), и шаги ссылаются на возвращённые discovered_operation.id. "
-                    + "Вызов идёт внутри транзакции: ошибка смежного сервиса откатывает изменения use case.")
+                    + "карточку и полностью пересоздаёт состав шагов. Карточка сохраняется до вызова fdm-products, "
+                    + "затем состав методов публикуется через PUT /api/v1/use-case/operations?use-case-id={id} "
+                    + "(массив интерфейсов: группы по interfaceCode+product, без кода — CRC32), и шаги ссылаются "
+                    + "на возвращённые discovered_operation.id. Старые шаги удаляются только после успешного "
+                    + "ответа. Вызов идёт внутри транзакции: ошибка смежного сервиса откатывает изменения use case.")
     public ResponseEntity<UseCaseUpsertResponseDTO> upsertUseCase(
             @Parameter(description = "Идентификатор проекта") @PathVariable @Positive Integer projectId,
             @Parameter(description = "Ветка проекта (main / design / develop / user), по умолчанию main")
