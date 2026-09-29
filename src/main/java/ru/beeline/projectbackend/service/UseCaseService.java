@@ -3,6 +3,7 @@
  */
 package ru.beeline.projectbackend.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -95,11 +96,13 @@ public class UseCaseService {
     }
 
     @Transactional(readOnly = true)
-    public List<OperationUseCasesResponseDTO> findUseCasesByOperations(List<Integer> request) {
+    public List<OperationUseCasesResponseDTO> findUseCasesByOperations(JsonNode request) {
         List<Integer> operationIds = validateAndDedupe(request);
         log.info("UseCase by operations: обработка, методов={}", operationIds.size());
+
         List<UseCaseByOperationProjection> rows =
                 usOperationRelationRepository.findUseCasesByOperationIds(operationIds);
+
         Set<Integer> requested = new HashSet<>(operationIds);
         Map<Integer, NavigableSet<Integer>> ucIdsByOperation = new LinkedHashMap<>();
         Map<Integer, String> nameByUcId = new HashMap<>();
@@ -111,6 +114,7 @@ public class UseCaseService {
             collectUseCase(ucIdsByOperation, requested, row.getReqOperationId(), row.getUcId());
             collectUseCase(ucIdsByOperation, requested, row.getRelatedReqOperationId(), row.getUcId());
         }
+
         List<OperationUseCasesResponseDTO> response = new ArrayList<>(operationIds.size());
         for (Integer operationId : operationIds) {
             NavigableSet<Integer> ucIds = ucIdsByOperation.get(operationId);
@@ -135,8 +139,11 @@ public class UseCaseService {
         }
     }
 
-    private List<Integer> validateAndDedupe(List<Integer> request) {
-        if (request == null) {
+    private List<Integer> validateAndDedupe(JsonNode request) {
+        if (request == null || request.isNull() || request.isMissingNode()) {
+            throw new ValidationException(MISSING_REQUEST_BODY);
+        }
+        if (!request.isArray()) {
             throw new ValidationException(MISSING_REQUEST_BODY);
         }
         if (request.isEmpty()) {
@@ -144,10 +151,14 @@ public class UseCaseService {
         }
         List<Integer> operationIds = new ArrayList<>(request.size());
         Set<Integer> unique = new LinkedHashSet<>();
-        for (Integer operationId : request) {
-            if (operationId == null) {
+        for (JsonNode element : request) {
+            if (element == null || element.isNull()) {
                 throw new ValidationException(BLANK_OPERATION_ID);
             }
+            if (!element.isIntegralNumber() || !element.canConvertToInt()) {
+                throw new ValidationException(BLANK_OPERATION_ID);
+            }
+            Integer operationId = element.intValue();
             if (unique.add(operationId)) {
                 operationIds.add(operationId);
             }

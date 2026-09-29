@@ -3,6 +3,10 @@
  */
 package ru.beeline.projectbackend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.NullNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,8 +38,8 @@ import ru.beeline.projectbackend.exception.NotFoundException;
 import ru.beeline.projectbackend.exception.ValidationException;
 import ru.beeline.projectbackend.repository.ArtifactBranchRepository;
 import ru.beeline.projectbackend.repository.ProjectRepository;
-import ru.beeline.projectbackend.repository.UseCaseByOperationProjection;
 import ru.beeline.projectbackend.repository.UsOperationRelationRepository;
+import ru.beeline.projectbackend.repository.UseCaseByOperationProjection;
 import ru.beeline.projectbackend.repository.UseCaseRepository;
 
 import java.util.ArrayList;
@@ -49,8 +53,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -322,6 +326,46 @@ class UseCaseServiceTest {
     }
 
     @Test
+    @DisplayName("Поиск по операциям: тело, пустой список и невалидный элемент — 400 без запроса в БД")
+    void failsOnInvalidOperationsBody() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+
+        assertThatThrownBy(() -> service.findUseCasesByOperations(null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Отсутствует тело запроса");
+
+        assertThatThrownBy(() -> service.findUseCasesByOperations(array()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Список идентификаторов методов не может быть пустым");
+
+        ArrayNode withNull = array(20);
+        withNull.add(NullNode.getInstance());
+        assertThatThrownBy(() -> service.findUseCasesByOperations(withNull))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Идентификатор метода не может быть пустым");
+
+        assertThatThrownBy(() -> service.findUseCasesByOperations(mapper.readTree("[\"5\"]")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Идентификатор метода не может быть пустым");
+
+        assertThatThrownBy(() -> service.findUseCasesByOperations(mapper.readTree("[5.7]")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Идентификатор метода не может быть пустым");
+
+        verify(usOperationRelationRepository, never()).findUseCasesByOperationIds(any());
+    }
+
+    private ArrayNode array(Integer... values) {
+        ArrayNode node = JsonNodeFactory.instance.arrayNode();
+        if (values != null) {
+            for (Integer value : values) {
+                node.add(value);
+            }
+        }
+        return node;
+    }
+
+    @Test
     @DisplayName("fdm-products не вернул id для операции справочника — 502, состав не записывается")
     void failsWhenOperationIdMissingInResponse() {
         when(productClient.upsertUseCaseOperations(anyInt(), any()))
@@ -350,7 +394,7 @@ class UseCaseServiceTest {
                 .thenReturn(rows);
 
         List<OperationUseCasesResponseDTO> response =
-                service.findUseCasesByOperations(List.of(20, 99, 20));
+                service.findUseCasesByOperations(array(20, 99, 20));
 
         assertThat(response).extracting(OperationUseCasesResponseDTO::getOperationId)
                 .containsExactly(20, 99);
@@ -363,24 +407,6 @@ class UseCaseServiceTest {
         ArgumentCaptor<List<Integer>> captor = ArgumentCaptor.forClass(List.class);
         verify(usOperationRelationRepository).findUseCasesByOperationIds(captor.capture());
         assertThat(captor.getValue()).containsExactly(20, 99);
-    }
-
-    @Test
-    @DisplayName("Поиск по операциям: тело, пустой список и null-элемент — 400 без запроса в БД")
-    void failsOnInvalidOperationsBody() {
-        assertThatThrownBy(() -> service.findUseCasesByOperations(null))
-                .isInstanceOf(ValidationException.class)
-                .hasMessage("Отсутствует тело запроса");
-
-        assertThatThrownBy(() -> service.findUseCasesByOperations(List.of()))
-                .isInstanceOf(ValidationException.class)
-                .hasMessage("Список идентификаторов методов не может быть пустым");
-
-        assertThatThrownBy(() -> service.findUseCasesByOperations(Arrays.asList(20, null)))
-                .isInstanceOf(ValidationException.class)
-                .hasMessage("Идентификатор метода не может быть пустым");
-
-        verify(usOperationRelationRepository, never()).findUseCasesByOperationIds(any());
     }
 
     private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
