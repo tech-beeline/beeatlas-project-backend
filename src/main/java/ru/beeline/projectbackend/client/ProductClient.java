@@ -27,8 +27,6 @@ import java.util.List;
 @Component
 public class ProductClient {
 
-    private static final String SOURCE_PROJECT_TASK = "ProjectTask";
-
     private final RestTemplate restTemplate;
     private final String baseUrl;
 
@@ -38,12 +36,12 @@ public class ProductClient {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
-    public List<DiscoveredInterfaceResultDTO> upsertProjectDiscoveredInterfaces(
-            Integer projectId, List<DiscoveredInterfaceUpsertDTO> interfaces) {
+    public List<DiscoveredInterfaceResultDTO> upsertUseCaseOperations(
+            Integer useCaseId, List<DiscoveredInterfaceUpsertDTO> interfaces) {
 
         String url = UriComponentsBuilder
-                .fromUriString(baseUrl + "/api/v1/discovered-interface/project/" + projectId)
-                .queryParam("source", SOURCE_PROJECT_TASK)
+                .fromUriString(baseUrl + "/api/v1/use-case/operations")
+                .queryParam("use-case-id", useCaseId)
                 .toUriString();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -55,7 +53,7 @@ public class ProductClient {
                     }).getBody();
             if (result == null) {
                 throw new ExternalServiceException(HttpStatus.BAD_GATEWAY,
-                        "Сервис продуктов вернул пустой ответ на публикацию интерфейсов use case");
+                        "Сервис продуктов вернул пустой ответ на публикацию операций use case");
             }
             return result;
         } catch (RestClientResponseException e) {
@@ -63,7 +61,7 @@ public class ProductClient {
             HttpStatus status = HttpStatus.resolve(e.getStatusCode().value());
             throw new ExternalServiceException(
                     status == null || status.is5xxServerError() ? HttpStatus.BAD_GATEWAY : status,
-                    "Ошибка сервиса продуктов при публикации интерфейсов use case: " + e.getResponseBodyAsString());
+                    "Ошибка сервиса продуктов при публикации операций use case: " + e.getResponseBodyAsString());
         } catch (ExternalServiceException e) {
             throw e;
         } catch (Exception e) {

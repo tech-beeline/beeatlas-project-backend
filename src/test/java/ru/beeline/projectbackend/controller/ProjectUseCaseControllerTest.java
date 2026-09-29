@@ -121,6 +121,24 @@ class ProjectUseCaseControllerTest {
     }
 
     @Test
+    void getUseCasesByOperations_numericString_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/by-operations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[\"5\"]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Идентификатор метода не может быть пустым"));
+    }
+
+    @Test
+    void getUseCasesByOperations_floatElement_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/by-operations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[5.7]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Идентификатор метода не может быть пустым"));
+    }
+
+    @Test
     void getUseCasesByOperations_malformedJson_returns400() throws Exception {
         mockMvc.perform(post("/api/v1/project/use-cases/by-operations")
                         .contentType(MediaType.APPLICATION_JSON)

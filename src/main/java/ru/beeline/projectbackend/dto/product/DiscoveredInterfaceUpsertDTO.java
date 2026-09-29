@@ -18,5 +18,6 @@ public class DiscoveredInterfaceUpsertDTO {
 
     private String interfaceCode;
     private String product;
+    private String productPlanned;
     private List<DiscoveredOperationUpsertDTO> operations;
 }

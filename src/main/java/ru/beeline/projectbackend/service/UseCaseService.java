@@ -3,6 +3,7 @@
  */
 package ru.beeline.projectbackend.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -70,27 +71,21 @@ public class UseCaseService {
         String branchName = normalizeBranch(branch);
         log.info("UseCase upsert: обработка, projectId={}, branch={}, useCase.uid={}", projectId, branchName,
                 request != null && request.getUseCase() != null ? request.getUseCase().getUid() : null);
-
         validateRequest(request);
         ArtifactBranch projectBranch = resolveBranch(projectId, branchName);
-
         Map<String, ReqOperationDTO> operationsByGuid = indexReqOperations(request.getReqOperations());
         List<UseCaseCallDTO> calls = request.getUseCaseCall();
         validateCalls(calls, operationsByGuid);
-
         UseCase useCase = upsertCard(projectBranch.getId(), request.getUseCase());
+        List<DiscoveredInterfaceUpsertDTO> payload = buildDiscoveredInterfaces(operationsByGuid.values());
+        List<DiscoveredInterfaceResultDTO> published =
+                productClient.upsertUseCaseOperations(useCase.getId(), payload);
+        Map<String, Integer> operationIdByGuid = mapOperationIds(operationsByGuid, published);
         int removed = usOperationRelationRepository.deleteAllByUcId(useCase.getId());
         if (removed > 0) {
             log.info("UseCase upsert: удалён прежний состав, ucId={}, шагов={}", useCase.getId(), removed);
         }
-
-        List<DiscoveredInterfaceUpsertDTO> payload = buildDiscoveredInterfaces(operationsByGuid.values());
-        List<DiscoveredInterfaceResultDTO> published =
-                productClient.upsertProjectDiscoveredInterfaces(projectId, payload);
-        Map<String, Integer> operationIdByGuid = mapOperationIds(operationsByGuid, published);
-
         saveRelations(useCase.getId(), calls, operationIdByGuid);
-
         log.info("UseCase upsert: завершён, id={}, code={}, projectBranchId={}, шагов={}",
                 useCase.getId(), useCase.getCode(), useCase.getProjectBranchId(), calls.size());
         return UseCaseUpsertResponseDTO.builder()
@@ -101,11 +96,13 @@ public class UseCaseService {
     }
 
     @Transactional(readOnly = true)
-    public List<OperationUseCasesResponseDTO> findUseCasesByOperations(List<Integer> request) {
+    public List<OperationUseCasesResponseDTO> findUseCasesByOperations(JsonNode request) {
         List<Integer> operationIds = validateAndDedupe(request);
         log.info("UseCase by operations: обработка, методов={}", operationIds.size());
+
         List<UseCaseByOperationProjection> rows =
                 usOperationRelationRepository.findUseCasesByOperationIds(operationIds);
+
         Set<Integer> requested = new HashSet<>(operationIds);
         Map<Integer, NavigableSet<Integer>> ucIdsByOperation = new LinkedHashMap<>();
         Map<Integer, String> nameByUcId = new HashMap<>();
@@ -117,6 +114,7 @@ public class UseCaseService {
             collectUseCase(ucIdsByOperation, requested, row.getReqOperationId(), row.getUcId());
             collectUseCase(ucIdsByOperation, requested, row.getRelatedReqOperationId(), row.getUcId());
         }
+
         List<OperationUseCasesResponseDTO> response = new ArrayList<>(operationIds.size());
         for (Integer operationId : operationIds) {
             NavigableSet<Integer> ucIds = ucIdsByOperation.get(operationId);
@@ -141,8 +139,11 @@ public class UseCaseService {
         }
     }
 
-    private List<Integer> validateAndDedupe(List<Integer> request) {
-        if (request == null) {
+    private List<Integer> validateAndDedupe(JsonNode request) {
+        if (request == null || request.isNull() || request.isMissingNode()) {
+            throw new ValidationException(MISSING_REQUEST_BODY);
+        }
+        if (!request.isArray()) {
             throw new ValidationException(MISSING_REQUEST_BODY);
         }
         if (request.isEmpty()) {
@@ -150,10 +151,14 @@ public class UseCaseService {
         }
         List<Integer> operationIds = new ArrayList<>(request.size());
         Set<Integer> unique = new LinkedHashSet<>();
-        for (Integer operationId : request) {
-            if (operationId == null) {
+        for (JsonNode element : request) {
+            if (element == null || element.isNull()) {
                 throw new ValidationException(BLANK_OPERATION_ID);
             }
+            if (!element.isIntegralNumber() || !element.canConvertToInt()) {
+                throw new ValidationException(BLANK_OPERATION_ID);
+            }
+            Integer operationId = element.intValue();
             if (unique.add(operationId)) {
                 operationIds.add(operationId);
             }
@@ -237,6 +242,7 @@ public class UseCaseService {
         useCase.setCode(code);
         useCase.setName(info.getName().trim());
         useCase.setDescription(info.getDescription());
+        useCase.setBiStepCode(trimToNull(info.getBiStepCode()));
         return useCaseRepository.save(useCase);
     }
 
@@ -247,6 +253,7 @@ public class UseCaseService {
         for (ReqOperationDTO reqOperation : reqOperations) {
             String interfaceCode = trimToNull(reqOperation.getInterfaceCode());
             DiscoveredOperationUpsertDTO operation = toOperation(reqOperation);
+            String productPlanned = trimToNull(reqOperation.getProductPlanned());
             if (interfaceCode == null) {
                 standalone.add(DiscoveredInterfaceUpsertDTO.builder()
                         .interfaceCode(InterfaceCodeGenerator.crc32(
@@ -256,18 +263,27 @@ public class UseCaseService {
                                 reqOperation.getTcCode(),
                                 reqOperation.getDescriptionOperation()))
                         .product(reqOperation.getProduct().trim())
+                        .productPlanned(productPlanned)
                         .operations(new ArrayList<>(List.of(operation)))
                         .build());
                 continue;
             }
             String product = reqOperation.getProduct().trim();
-            String key = interfaceCode.toLowerCase(Locale.ROOT) + " " + product.toLowerCase(Locale.ROOT);
-            grouped.computeIfAbsent(key, ignored -> DiscoveredInterfaceUpsertDTO.builder()
-                            .interfaceCode(interfaceCode)
-                            .product(product)
-                            .operations(new ArrayList<>())
-                            .build())
-                    .getOperations().add(operation);
+            String key = interfaceCode.toLowerCase(Locale.ROOT) + " " + product.toLowerCase(Locale.ROOT);
+            DiscoveredInterfaceUpsertDTO group = grouped.get(key);
+            if (group == null) {
+                group = DiscoveredInterfaceUpsertDTO.builder()
+                        .interfaceCode(interfaceCode)
+                        .product(product)
+                        .productPlanned(productPlanned)
+                        .operations(new ArrayList<>())
+                        .build();
+                grouped.put(key, group);
+            } else if (!normalizeKey(group.getProductPlanned()).equals(normalizeKey(productPlanned))) {
+                throw new ValidationException("productPlanned должен совпадать для интерфейса "
+                        + interfaceCode + " и продукта " + product);
+            }
+            group.getOperations().add(operation);
         }
 
         List<DiscoveredInterfaceUpsertDTO> payload = new ArrayList<>(grouped.values());
@@ -282,6 +298,7 @@ public class UseCaseService {
                 .descriptionTc(reqOperation.getDescriptionTc())
                 .tcCode(reqOperation.getTcCode())
                 .descriptionOperation(reqOperation.getDescriptionOperation())
+                .isPlanned(reqOperation.getIsPlanned())
                 .build();
     }
 

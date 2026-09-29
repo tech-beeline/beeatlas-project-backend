@@ -24,4 +24,7 @@ public class UseCaseInfoDTO {
 
     @Schema(description = "Описание use case")
     private String description;
+
+    @Schema(description = "Код шага бизнес-взаимодействия; не задан или пустой после trim — в БД пишется NULL")
+    private String biStepCode;
 }
