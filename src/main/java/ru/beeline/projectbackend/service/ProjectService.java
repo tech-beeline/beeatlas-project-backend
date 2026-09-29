@@ -74,13 +74,6 @@ public class ProjectService {
                 .build();
         project = projectRepository.save(project);
         project.setUniqueIdent(toUniqueIdent(project.getId()));
-
-        artifactBranchRepository.save(ArtifactBranch.builder()
-                .artifactType(ArtifactBranch.TYPE_PROJECT)
-                .artifactId(project.getId())
-                .name(DEFAULT_BRANCH)
-                .build());
-
         return toResponse(project);
     }
 
