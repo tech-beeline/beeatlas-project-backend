@@ -49,7 +49,7 @@ ru.beeline.projectbackend/
 
 | Метод | Путь | Описание |
 |---|---|---|
-| `POST` | `/api/v1/project` | Создание проекта. Заголовок `user-id` — владелец. Генерируется `uniqueIdent` формата `PROJ.XX.XX.XX`. Автоматически создаётся ветка `main`. |
+| `POST` | `/api/v1/project` | Создание проекта. Заголовок `user-id` — владелец. Генерируется `uniqueIdent` формата `PROJ.XX.XX.XX`. |
 | `POST` | `/api/v1/project/{projectId}/user/{userId}` | Добавление пользователя к проекту |
 | `GET` | `/api/v1/project` | Список проектов с фильтрацией по `status-id`, `owner-id` |
 | `GET` | `/api/v1/project/{id}` | Детальная информация о проекте |
@@ -90,7 +90,6 @@ ru.beeline.projectbackend/
 | `OpenQuestion` | `open_questions` | Открытые вопросы |
 | `AssessmentTc` | `assessment_tc` | Существующие технические возможности |
 | `AssessmentTcDesign` | `assessment_tc_design` | Новые TC, создаваемые пользователем |
-| `ArtifactBranch` | `artifact_branch` | Ветвление артефактов |
 | `UseCase` | `use_case` | Сценарии использования |
 | `UsOperationRelation` | `us_operation_relation` | Шаги use case и связи с операциями |
 
