@@ -495,6 +495,62 @@ class UseCaseServiceTest {
         assertThat(captor.getValue()).containsExactly(20, 99);
     }
 
+    @Test
+    @DisplayName("Поиск по операциям: одна карточка в двух ветках не дублируется в useCases")
+    void findsUseCasesByOperations_sameUseCaseOnTwoBranches_deduped() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(20, 30, 7, "Оформление заказа"),
+                row(null, 20, 7, "Оформление заказа"),
+                row(40, 20, 7, "Оформление заказа"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any()))
+                .thenReturn(rows);
+
+        List<OperationUseCasesResponseDTO> response =
+                service.findUseCasesByOperations(array(20));
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).getOperationId()).isEqualTo(20);
+        assertThat(response.get(0).getUseCases()).extracting(uc -> uc.getId()).containsExactly(7);
+        assertThat(response.get(0).getUseCases().get(0).getName()).isEqualTo("Оформление заказа");
+    }
+
+    @Test
+    @DisplayName("Поиск по операциям: смешанный набор — известные id с use case, неизвестный с пустым списком, порядок сохранён")
+    void findsUseCasesByOperations_mixedKnownAndUnknownIds() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(null, 20, 7, "Оформление заказа"),
+                row(10, 15, 8, "Возврат"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any()))
+                .thenReturn(rows);
+
+        List<OperationUseCasesResponseDTO> response =
+                service.findUseCasesByOperations(array(20, 99999, 10));
+
+        assertThat(response).extracting(OperationUseCasesResponseDTO::getOperationId)
+                .containsExactly(20, 99999, 10);
+        assertThat(response.get(0).getUseCases()).extracting(uc -> uc.getId()).containsExactly(7);
+        assertThat(response.get(1).getUseCases()).isEmpty();
+        assertThat(response.get(2).getUseCases()).extracting(uc -> uc.getId()).containsExactly(8);
+    }
+
+    @Test
+    @DisplayName("Поиск по операциям: шаги без карточки (неверный artifact_type / orphan) исключаются без ошибки")
+    void findsUseCasesByOperations_invalidOrOrphanStepsExcludedWithoutError() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(20, 30, null, null),
+                row(null, 10, 7, "Оформление заказа"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any()))
+                .thenReturn(rows);
+
+        List<OperationUseCasesResponseDTO> response =
+                service.findUseCasesByOperations(array(20, 10));
+
+        assertThat(response).extracting(OperationUseCasesResponseDTO::getOperationId)
+                .containsExactly(20, 10);
+        assertThat(response.get(0).getUseCases()).isEmpty();
+        assertThat(response.get(1).getUseCases()).extracting(uc -> uc.getId()).containsExactly(7);
+    }
+
     private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
                                              Integer ucId, String ucName) {
         UseCaseByOperationProjection row = mock(UseCaseByOperationProjection.class);
