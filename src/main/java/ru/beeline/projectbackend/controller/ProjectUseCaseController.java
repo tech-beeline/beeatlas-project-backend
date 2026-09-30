@@ -31,24 +31,18 @@ import java.util.List;
 @RequiredArgsConstructor
 @Validated
 @Tag(name = "project-use-case",
-        description = "Публикация use case (карточка + шаги вызовов операций) в ветку проекта.")
+        description = "Публикация use case (карточка принадлежит проекту; шаги — на ветке use case).")
 public class ProjectUseCaseController {
 
     private final UseCaseService useCaseService;
 
     @PutMapping("/{projectId}/use-case")
     @Operation(summary = "Создать или обновить use case проекта",
-            description = "Принимает карточку useCase (включая необязательный biStepCode), шаги useCaseCall и "
-                    + "справочник операций reqOperations (включая необязательные productPlanned и isPlanned). "
-                    + "Идентичность use case — пара (ветка проекта, useCase.uid): повторный вызов обновляет "
-                    + "карточку и полностью пересоздаёт состав шагов. Карточка сохраняется до вызова fdm-products, "
-                    + "затем состав методов публикуется через PUT /api/v1/use-case/operations?use-case-id={id} "
-                    + "(массив интерфейсов: группы по interfaceCode+product, без кода — CRC32), и шаги ссылаются "
-                    + "на возвращённые discovered_operation.id. Старые шаги удаляются только после успешного "
-                    + "ответа. Вызов идёт внутри транзакции: ошибка смежного сервиса откатывает изменения use case.")
+            description = "Карточка принадлежит проекту (идентичность — projectId + useCase.uid). "
+                    + "Шаги пишутся на ветку use case (query branch, по умолчанию main); отсутствующая ветка создаётся.")
     public ResponseEntity<UseCaseUpsertResponseDTO> upsertUseCase(
             @Parameter(description = "Идентификатор проекта") @PathVariable @Positive Integer projectId,
-            @Parameter(description = "Ветка проекта (main / design / develop / user), по умолчанию main")
+            @Parameter(description = "Ветка use case, по умолчанию main")
             @RequestParam(required = false) String branch,
             @RequestBody(required = false) UseCaseUpsertRequestDTO request) {
         return ResponseEntity.ok(useCaseService.upsert(projectId, branch, request));
@@ -58,8 +52,10 @@ public class ProjectUseCaseController {
     @Operation(summary = "Получить use case по идентификаторам методов",
             description = "Принимает JSON-массив целых discovered_operation.id без обёртки. Дубликаты id "
                     + "дедублицируются с сохранением порядка первого вхождения. Для каждого метода возвращаются "
-                    + "use case, у которых метод стоит хотя бы на одной стороне шага us_operation_relation. "
-                    + "Несуществующий id не является ошибкой: useCases = [].")
+                    + "карточки use case, у которых метод стоит хотя бы на одной стороне шага "
+                    + "us_operation_relation (шаги привязаны к ветке use case). Одна карточка не дублируется, "
+                    + "если метод есть в нескольких её ветках. Несуществующий id не является ошибкой: "
+                    + "useCases = [].")
     public ResponseEntity<List<OperationUseCasesResponseDTO>> getUseCasesByOperations(
             @RequestBody(required = false) JsonNode request) {
         return ResponseEntity.ok(useCaseService.findUseCasesByOperations(request));

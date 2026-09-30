@@ -15,13 +15,15 @@ import java.util.List;
 public interface UsOperationRelationRepository extends JpaRepository<UsOperationRelation, Integer> {
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("DELETE FROM UsOperationRelation r WHERE r.ucId = :ucId")
-    int deleteAllByUcId(@Param("ucId") Integer ucId);
+    @Query("DELETE FROM UsOperationRelation r WHERE r.useCaseBranchId = :useCaseBranchId")
+    int deleteAllByUseCaseBranchId(@Param("useCaseBranchId") Integer useCaseBranchId);
 
     @Query("SELECT r.reqOperationId AS reqOperationId, r.relatedReqOperationId AS relatedReqOperationId, "
             + "u.id AS ucId, u.name AS ucName "
-            + "FROM UsOperationRelation r, UseCase u "
-            + "WHERE r.ucId = u.id "
+            + "FROM UsOperationRelation r, ArtifactBranch b, UseCase u "
+            + "WHERE r.useCaseBranchId = b.id "
+            + "AND b.artifactType = 'use_case' "
+            + "AND b.artifactId = u.id "
             + "AND (r.reqOperationId IN :operationIds OR r.relatedReqOperationId IN :operationIds)")
     List<UseCaseByOperationProjection> findUseCasesByOperationIds(
             @Param("operationIds") Collection<Integer> operationIds);
