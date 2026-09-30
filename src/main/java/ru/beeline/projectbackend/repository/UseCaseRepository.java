@@ -12,7 +12,7 @@ import java.util.Optional;
 
 public interface UseCaseRepository extends JpaRepository<UseCase, Integer> {
 
-    @Query("SELECT u FROM UseCase u WHERE u.projectBranchId = :projectBranchId AND LOWER(u.code) = LOWER(:code)")
-    Optional<UseCase> findByProjectBranchIdAndCodeIgnoreCase(@Param("projectBranchId") Integer projectBranchId,
-                                                             @Param("code") String code);
+    @Query("SELECT u FROM UseCase u WHERE u.projectId = :projectId AND LOWER(u.code) = LOWER(:code)")
+    Optional<UseCase> findByProjectIdAndCodeIgnoreCase(@Param("projectId") Integer projectId,
+                                                       @Param("code") String code);
 }

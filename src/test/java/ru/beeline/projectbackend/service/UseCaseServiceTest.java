@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -66,7 +67,7 @@ import static org.mockito.Mockito.when;
 class UseCaseServiceTest {
 
     private static final Integer PROJECT_ID = 3;
-    private static final Integer BRANCH_ID = 42;
+    private static final Integer USE_CASE_BRANCH_ID = 42;
     private static final Integer USE_CASE_ID = 7;
     private static final String ALIAS = "my-product";
 
@@ -90,14 +91,7 @@ class UseCaseServiceTest {
     void setUp() {
         when(projectRepository.findByIdAndDeleteDateIsNull(anyInt()))
                 .thenReturn(Optional.of(Project.builder().id(PROJECT_ID).name("проект").build()));
-        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase(anyString(), anyInt(), anyString()))
-                .thenReturn(Optional.of(ArtifactBranch.builder()
-                        .id(BRANCH_ID)
-                        .artifactType(ArtifactBranch.TYPE_PROJECT)
-                        .artifactId(PROJECT_ID)
-                        .name("main")
-                        .build()));
-        when(useCaseRepository.findByProjectBranchIdAndCodeIgnoreCase(anyInt(), anyString()))
+        when(useCaseRepository.findByProjectIdAndCodeIgnoreCase(anyInt(), anyString()))
                 .thenReturn(Optional.empty());
         when(useCaseRepository.save(any(UseCase.class))).thenAnswer(invocation -> {
             UseCase saved = invocation.getArgument(0);
@@ -106,31 +100,48 @@ class UseCaseServiceTest {
             }
             return saved;
         });
-        when(usOperationRelationRepository.deleteAllByUcId(anyInt())).thenReturn(0);
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase(anyString(), anyInt(), anyString()))
+                .thenReturn(Optional.empty());
+        when(artifactBranchRepository.save(any(ArtifactBranch.class))).thenAnswer(invocation -> {
+            ArtifactBranch saved = invocation.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(USE_CASE_BRANCH_ID);
+            }
+            return saved;
+        });
+        when(usOperationRelationRepository.deleteAllByUseCaseBranchId(anyInt())).thenReturn(0);
         when(productClient.upsertUseCaseOperations(anyInt(), any())).thenReturn(publishedResponse());
     }
 
     @Test
-    @DisplayName("Создание: карточка сохраняется, шаги ссылаются на id операций из ответа fdm-products")
-    void createsUseCaseWithSteps() {
-        UseCaseUpsertResponseDTO response = service.upsert(PROJECT_ID, "main", request());
+    @DisplayName("Создание: карточка и ветка main, шаги на useCaseBranchId, ответ без projectBranchId")
+    void createsUseCaseWithMainBranchAndSteps() {
+        UseCaseUpsertResponseDTO response = service.upsert(PROJECT_ID, null, request());
 
         assertThat(response.getId()).isEqualTo(USE_CASE_ID);
         assertThat(response.getCode()).isEqualTo("uc-1");
-        assertThat(response.getProjectBranchId()).isEqualTo(BRANCH_ID);
+        assertThat(response.getProjectId()).isEqualTo(PROJECT_ID);
+        assertThat(response.getUseCaseBranchId()).isEqualTo(USE_CASE_BRANCH_ID);
+        assertThat(response.getBranch()).isEqualTo("main");
 
         ArgumentCaptor<UseCase> cardCaptor = ArgumentCaptor.forClass(UseCase.class);
         verify(useCaseRepository).save(cardCaptor.capture());
         UseCase card = cardCaptor.getValue();
-        assertThat(card.getProjectBranchId()).isEqualTo(BRANCH_ID);
+        assertThat(card.getProjectId()).isEqualTo(PROJECT_ID);
         assertThat(card.getCode()).isEqualTo("uc-1");
         assertThat(card.getName()).isEqualTo("Оформление заказа");
         assertThat(card.getDescription()).isEqualTo("описание use case");
         assertThat(card.getBiStepCode()).isEqualTo("BI-1");
 
+        ArgumentCaptor<ArtifactBranch> branchCaptor = ArgumentCaptor.forClass(ArtifactBranch.class);
+        verify(artifactBranchRepository).save(branchCaptor.capture());
+        assertThat(branchCaptor.getValue().getArtifactType()).isEqualTo("use_case");
+        assertThat(branchCaptor.getValue().getArtifactId()).isEqualTo(USE_CASE_ID);
+        assertThat(branchCaptor.getValue().getName()).isEqualTo("main");
+
         List<UsOperationRelation> relations = savedRelations();
         assertThat(relations).hasSize(2);
-        assertThat(relations.get(0).getUcId()).isEqualTo(USE_CASE_ID);
+        assertThat(relations.get(0).getUseCaseBranchId()).isEqualTo(USE_CASE_BRANCH_ID);
         assertThat(relations.get(0).getOrder()).isEqualTo(1);
         assertThat(relations.get(0).getReqOperationId()).isNull();
         assertThat(relations.get(0).getRelatedReqOperationId()).isEqualTo(901);
@@ -140,15 +151,67 @@ class UseCaseServiceTest {
     }
 
     @Test
-    @DisplayName("Ветка не передана — используется main, регистр не важен")
-    void defaultsBranchToMain() {
+    @DisplayName("Ветка не передана — main; регистр имени ветки не важен")
+    void defaultsBranchToMainAndNormalizesCase() {
         service.upsert(PROJECT_ID, null, request());
         verify(artifactBranchRepository)
-                .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(eq("project"), eq(PROJECT_ID), eq("main"));
+                .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(
+                        eq("use_case"), eq(USE_CASE_ID), eq("main"));
 
-        service.upsert(PROJECT_ID, "  DeVeLoP ", request());
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase(
+                "use_case", USE_CASE_ID, "develop"))
+                .thenReturn(Optional.of(ArtifactBranch.builder()
+                        .id(99)
+                        .artifactType("use_case")
+                        .artifactId(USE_CASE_ID)
+                        .name("develop")
+                        .build()));
+
+        UseCaseUpsertResponseDTO response = service.upsert(PROJECT_ID, "  DeVeLoP ", request());
+        assertThat(response.getBranch()).isEqualTo("develop");
+        assertThat(response.getUseCaseBranchId()).isEqualTo(99);
         verify(artifactBranchRepository)
-                .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(eq("project"), eq(PROJECT_ID), eq("develop"));
+                .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(
+                        eq("use_case"), eq(USE_CASE_ID), eq("develop"));
+    }
+
+    @Test
+    @DisplayName("Вторая ветка не затирает шаги первой: delete только по useCaseBranchId текущей ветки")
+    void secondBranchDoesNotWipeFirstBranchSteps() {
+        Integer mainBranchId = 10;
+        Integer designBranchId = 20;
+        AtomicInteger branchSeq = new AtomicInteger(0);
+
+        when(useCaseRepository.findByProjectIdAndCodeIgnoreCase(eq(PROJECT_ID), anyString()))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(UseCase.builder()
+                        .id(USE_CASE_ID)
+                        .projectId(PROJECT_ID)
+                        .code("uc-1")
+                        .name("прежнее")
+                        .build()));
+
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase(
+                eq("use_case"), eq(USE_CASE_ID), eq("main")))
+                .thenReturn(Optional.empty());
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase(
+                eq("use_case"), eq(USE_CASE_ID), eq("design")))
+                .thenReturn(Optional.empty());
+        when(artifactBranchRepository.save(any(ArtifactBranch.class))).thenAnswer(invocation -> {
+            ArtifactBranch saved = invocation.getArgument(0);
+            int n = branchSeq.getAndIncrement();
+            saved.setId(n == 0 ? mainBranchId : designBranchId);
+            return saved;
+        });
+
+        service.upsert(PROJECT_ID, "main", request());
+        service.upsert(PROJECT_ID, "design", request());
+
+        verify(usOperationRelationRepository).deleteAllByUseCaseBranchId(mainBranchId);
+        verify(usOperationRelationRepository).deleteAllByUseCaseBranchId(designBranchId);
+        verify(usOperationRelationRepository, never()).deleteAllByUseCaseBranchId(eq(USE_CASE_ID));
+        verify(useCaseRepository, times(2)).save(any(UseCase.class));
+        verify(artifactBranchRepository, times(2)).save(any(ArtifactBranch.class));
     }
 
     @Test
@@ -179,26 +242,36 @@ class UseCaseServiceTest {
     }
 
     @Test
-    @DisplayName("Обновление: карточка обновляется, прежний состав удаляется и пересоздаётся")
+    @DisplayName("Обновление: карточка обновляется, прежний состав ветки удаляется и пересоздаётся")
     void rebuildsStepsOnUpdate() {
-        when(useCaseRepository.findByProjectBranchIdAndCodeIgnoreCase(anyInt(), anyString()))
+        when(useCaseRepository.findByProjectIdAndCodeIgnoreCase(anyInt(), anyString()))
                 .thenReturn(Optional.of(UseCase.builder()
                         .id(USE_CASE_ID)
-                        .projectBranchId(BRANCH_ID)
+                        .projectId(PROJECT_ID)
                         .code("uc-1")
                         .name("прежнее имя")
                         .description("прежнее описание")
                         .build()));
-        when(usOperationRelationRepository.deleteAllByUcId(USE_CASE_ID)).thenReturn(5);
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase(
+                "use_case", USE_CASE_ID, "main"))
+                .thenReturn(Optional.of(ArtifactBranch.builder()
+                        .id(USE_CASE_BRANCH_ID)
+                        .artifactType("use_case")
+                        .artifactId(USE_CASE_ID)
+                        .name("main")
+                        .build()));
+        when(usOperationRelationRepository.deleteAllByUseCaseBranchId(USE_CASE_BRANCH_ID)).thenReturn(5);
 
         UseCaseUpsertResponseDTO response = service.upsert(PROJECT_ID, "main", request());
 
         assertThat(response.getId()).isEqualTo(USE_CASE_ID);
+        assertThat(response.getUseCaseBranchId()).isEqualTo(USE_CASE_BRANCH_ID);
         ArgumentCaptor<UseCase> cardCaptor = ArgumentCaptor.forClass(UseCase.class);
         verify(useCaseRepository).save(cardCaptor.capture());
         assertThat(cardCaptor.getValue().getName()).isEqualTo("Оформление заказа");
         assertThat(cardCaptor.getValue().getDescription()).isEqualTo("описание use case");
-        verify(usOperationRelationRepository).deleteAllByUcId(USE_CASE_ID);
+        verify(usOperationRelationRepository).deleteAllByUseCaseBranchId(USE_CASE_BRANCH_ID);
+        verify(artifactBranchRepository, never()).save(any(ArtifactBranch.class));
         assertThat(savedRelations()).hasSize(2);
     }
 
@@ -228,7 +301,7 @@ class UseCaseServiceTest {
                 .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("productPlanned");
         verifyNoInteractions(productClient);
-        verify(usOperationRelationRepository, never()).deleteAllByUcId(anyInt());
+        verify(usOperationRelationRepository, never()).deleteAllByUseCaseBranchId(anyInt());
     }
 
     @Test
@@ -238,7 +311,7 @@ class UseCaseServiceTest {
 
         InOrder inOrder = inOrder(productClient, usOperationRelationRepository);
         inOrder.verify(productClient).upsertUseCaseOperations(eq(USE_CASE_ID), any());
-        inOrder.verify(usOperationRelationRepository).deleteAllByUcId(USE_CASE_ID);
+        inOrder.verify(usOperationRelationRepository).deleteAllByUseCaseBranchId(USE_CASE_BRANCH_ID);
         inOrder.verify(usOperationRelationRepository).saveAll(any());
     }
 
@@ -254,15 +327,28 @@ class UseCaseServiceTest {
     }
 
     @Test
-    @DisplayName("Ветка проекта не найдена — 404, вызова fdm-products нет")
-    void failsOnUnknownBranch() {
-        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase(anyString(), anyInt(), anyString()))
-                .thenReturn(Optional.empty());
+    @DisplayName("Удалённый проект (delete_date) — 404")
+    void failsOnDeletedProject() {
+        when(projectRepository.findByIdAndDeleteDateIsNull(PROJECT_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.upsert(PROJECT_ID, "design", request()))
+        assertThatThrownBy(() -> service.upsert(PROJECT_ID, "main", request()))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessageContaining("design");
+                .hasMessageContaining("Проекта с таким ID не существует");
         verifyNoInteractions(productClient);
+        verify(useCaseRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Пустое или blank имя ветки — 400")
+    void failsOnBlankBranchName() {
+        assertThatThrownBy(() -> service.upsert(PROJECT_ID, "", request()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Имя ветки не может быть пустым");
+        assertThatThrownBy(() -> service.upsert(PROJECT_ID, "   ", request()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Имя ветки не может быть пустым");
+        verifyNoInteractions(productClient);
+        verify(useCaseRepository, never()).save(any());
     }
 
     @Test
@@ -321,7 +407,7 @@ class UseCaseServiceTest {
         assertThatThrownBy(() -> service.upsert(PROJECT_ID, "main", request()))
                 .isInstanceOf(ExternalServiceException.class)
                 .hasMessageContaining("Продукт не найден");
-        verify(usOperationRelationRepository, never()).deleteAllByUcId(anyInt());
+        verify(usOperationRelationRepository, never()).deleteAllByUseCaseBranchId(anyInt());
         verify(usOperationRelationRepository, never()).saveAll(any());
     }
 
@@ -378,7 +464,7 @@ class UseCaseServiceTest {
         assertThatThrownBy(() -> service.upsert(PROJECT_ID, "main", request()))
                 .isInstanceOf(ExternalServiceException.class)
                 .hasMessageContaining("op-2");
-        verify(usOperationRelationRepository, never()).deleteAllByUcId(anyInt());
+        verify(usOperationRelationRepository, never()).deleteAllByUseCaseBranchId(anyInt());
         verify(usOperationRelationRepository, never()).saveAll(any());
     }
 

@@ -10,7 +10,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.beeline.projectbackend.client.UserClient;
-import ru.beeline.projectbackend.domain.ArtifactBranch;
 import ru.beeline.projectbackend.domain.Assessment;
 import ru.beeline.projectbackend.domain.AssessmentStatusEnum;
 import ru.beeline.projectbackend.domain.Project;
@@ -23,7 +22,6 @@ import ru.beeline.projectbackend.dto.UserProfileShortDTO;
 import ru.beeline.projectbackend.exception.AuthServiceException;
 import ru.beeline.projectbackend.exception.ConflictException;
 import ru.beeline.projectbackend.exception.NotFoundException;
-import ru.beeline.projectbackend.repository.ArtifactBranchRepository;
 import ru.beeline.projectbackend.repository.AssessmentRepository;
 import ru.beeline.projectbackend.repository.AssessmentStatusEnumRepository;
 import ru.beeline.projectbackend.repository.ProjectRepository;
@@ -45,8 +43,6 @@ class ProjectServiceTest {
     @Mock
     private ProjectRepository projectRepository;
     @Mock
-    private ProjectUserRepository projectUserRepository;
-    @Mock
     private ProjectStatusEnumRepository projectStatusEnumRepository;
     @Mock
     private AssessmentRepository assessmentRepository;
@@ -54,8 +50,6 @@ class ProjectServiceTest {
     private AssessmentStatusEnumRepository assessmentStatusEnumRepository;
     @Mock
     private UserClient userClient;
-    @Mock
-    private ArtifactBranchRepository artifactBranchRepository;
 
     @InjectMocks
     private ProjectService projectService;
@@ -94,12 +88,6 @@ class ProjectServiceTest {
         assertEquals("BeeAtlas", captor.getValue().getSource());
         assertEquals(7, captor.getValue().getStatusId());
         assertEquals(42, captor.getValue().getOwnerId());
-
-        ArgumentCaptor<ArtifactBranch> branchCaptor = ArgumentCaptor.forClass(ArtifactBranch.class);
-        verify(artifactBranchRepository).save(branchCaptor.capture());
-        assertEquals("project", branchCaptor.getValue().getArtifactType());
-        assertEquals(1, branchCaptor.getValue().getArtifactId());
-        assertEquals("main", branchCaptor.getValue().getName());
     }
 
     @Test

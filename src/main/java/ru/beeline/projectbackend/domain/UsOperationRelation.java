@@ -20,8 +20,8 @@ public class UsOperationRelation {
             sequenceName = "projects.us_operation_relation_id_seq", allocationSize = 1)
     private Integer id;
 
-    @Column(name = "uc_id", nullable = false)
-    private Integer ucId;
+    @Column(name = "use_case_branch_id", nullable = false)
+    private Integer useCaseBranchId;
 
     @Column(name = "\"order\"", nullable = false)
     private Integer order;

@@ -19,8 +19,8 @@ public class UseCase {
     @SequenceGenerator(name = "use_case_id_seq", sequenceName = "projects.use_case_id_seq", allocationSize = 1)
     private Integer id;
 
-    @Column(name = "project_branch_id", nullable = false)
-    private Integer projectBranchId;
+    @Column(name = "project_id", nullable = false)
+    private Integer projectId;
 
     @Column(name = "code", nullable = false)
     private String code;

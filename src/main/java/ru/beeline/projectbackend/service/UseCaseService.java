@@ -58,7 +58,9 @@ import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 public class UseCaseService {
 
     private static final String DEFAULT_BRANCH = "main";
+    private static final String ARTIFACT_TYPE_USE_CASE = "use_case";
     private static final String UNKNOWN_GUID_MESSAGE = "useCaseCall ссылается на неизвестный guid reqOperation";
+    private static final String EMPTY_BRANCH_MESSAGE = "Имя ветки не может быть пустым";
 
     private final ProjectRepository projectRepository;
     private final ArtifactBranchRepository artifactBranchRepository;
@@ -68,30 +70,36 @@ public class UseCaseService {
 
     @Transactional
     public UseCaseUpsertResponseDTO upsert(Integer projectId, String branch, UseCaseUpsertRequestDTO request) {
-        String branchName = normalizeBranch(branch);
+        String branchName = resolveBranchName(branch);
         log.info("UseCase upsert: обработка, projectId={}, branch={}, useCase.uid={}", projectId, branchName,
                 request != null && request.getUseCase() != null ? request.getUseCase().getUid() : null);
         validateRequest(request);
-        ArtifactBranch projectBranch = resolveBranch(projectId, branchName);
+        Project project = projectRepository.findByIdAndDeleteDateIsNull(projectId)
+                .orElseThrow(() -> new NotFoundException("Проекта с таким ID не существует"));
         Map<String, ReqOperationDTO> operationsByGuid = indexReqOperations(request.getReqOperations());
         List<UseCaseCallDTO> calls = request.getUseCaseCall();
         validateCalls(calls, operationsByGuid);
-        UseCase useCase = upsertCard(projectBranch.getId(), request.getUseCase());
+        UseCase useCase = upsertCard(project.getId(), request.getUseCase());
+        ArtifactBranch useCaseBranch = findOrCreateUseCaseBranch(useCase.getId(), branchName);
         List<DiscoveredInterfaceUpsertDTO> payload = buildDiscoveredInterfaces(operationsByGuid.values());
         List<DiscoveredInterfaceResultDTO> published =
                 productClient.upsertUseCaseOperations(useCase.getId(), payload);
         Map<String, Integer> operationIdByGuid = mapOperationIds(operationsByGuid, published);
-        int removed = usOperationRelationRepository.deleteAllByUcId(useCase.getId());
+        int removed = usOperationRelationRepository.deleteAllByUseCaseBranchId(useCaseBranch.getId());
         if (removed > 0) {
-            log.info("UseCase upsert: удалён прежний состав, ucId={}, шагов={}", useCase.getId(), removed);
+            log.info("UseCase upsert: удалён прежний состав, useCaseBranchId={}, шагов={}",
+                    useCaseBranch.getId(), removed);
         }
-        saveRelations(useCase.getId(), calls, operationIdByGuid);
-        log.info("UseCase upsert: завершён, id={}, code={}, projectBranchId={}, шагов={}",
-                useCase.getId(), useCase.getCode(), useCase.getProjectBranchId(), calls.size());
+        saveRelations(useCaseBranch.getId(), calls, operationIdByGuid);
+        log.info("UseCase upsert: завершён, id={}, code={}, projectId={}, useCaseBranchId={}, branch={}, шагов={}",
+                useCase.getId(), useCase.getCode(), useCase.getProjectId(), useCaseBranch.getId(), branchName,
+                calls.size());
         return UseCaseUpsertResponseDTO.builder()
                 .id(useCase.getId())
                 .code(useCase.getCode())
-                .projectBranchId(useCase.getProjectBranchId())
+                .projectId(useCase.getProjectId())
+                .useCaseBranchId(useCaseBranch.getId())
+                .branch(branchName)
                 .build();
     }
 
@@ -166,17 +174,25 @@ public class UseCaseService {
         return operationIds;
     }
 
-    private String normalizeBranch(String branch) {
-        return (branch == null || branch.isBlank()) ? DEFAULT_BRANCH : branch.trim().toLowerCase(Locale.ROOT);
+    private String resolveBranchName(String branch) {
+        if (branch == null) {
+            return DEFAULT_BRANCH;
+        }
+        String trimmed = branch.trim();
+        if (trimmed.isEmpty()) {
+            throw new ValidationException(EMPTY_BRANCH_MESSAGE);
+        }
+        return trimmed.toLowerCase(Locale.ROOT);
     }
 
-    private ArtifactBranch resolveBranch(Integer projectId, String branchName) {
-        Project project = projectRepository.findByIdAndDeleteDateIsNull(projectId)
-                .orElseThrow(() -> new NotFoundException("Проекта с таким ID не существует"));
+    private ArtifactBranch findOrCreateUseCaseBranch(Integer useCaseId, String branchName) {
         return artifactBranchRepository
-                .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(ArtifactBranch.TYPE_PROJECT, project.getId(),
-                        branchName)
-                .orElseThrow(() -> new NotFoundException("Ветка проекта не найдена: " + branchName));
+                .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(ARTIFACT_TYPE_USE_CASE, useCaseId, branchName)
+                .orElseGet(() -> artifactBranchRepository.save(ArtifactBranch.builder()
+                        .artifactType(ARTIFACT_TYPE_USE_CASE)
+                        .artifactId(useCaseId)
+                        .name(branchName)
+                        .build()));
     }
 
     private void validateRequest(UseCaseUpsertRequestDTO request) {
@@ -233,12 +249,13 @@ public class UseCaseService {
         }
     }
 
-    private UseCase upsertCard(Integer projectBranchId, UseCaseInfoDTO info) {
+    private UseCase upsertCard(Integer projectId, UseCaseInfoDTO info) {
         String code = info.getUid().trim();
-        UseCase useCase = useCaseRepository.findByProjectBranchIdAndCodeIgnoreCase(projectBranchId, code)
+        UseCase useCase = useCaseRepository.findByProjectIdAndCodeIgnoreCase(projectId, code)
                 .orElseGet(() -> UseCase.builder()
-                        .projectBranchId(projectBranchId)
+                        .projectId(projectId)
                         .build());
+        useCase.setProjectId(projectId);
         useCase.setCode(code);
         useCase.setName(info.getName().trim());
         useCase.setDescription(info.getDescription());
@@ -343,7 +360,7 @@ public class UseCaseService {
     }
 
     private String operationKey(String interfaceCode, String product, String name, String type) {
-        return String.join(" ",
+        return String.join("\0",
                 normalizeKey(interfaceCode), normalizeKey(product), normalizeKey(name), normalizeKey(type));
     }
 
@@ -351,12 +368,13 @@ public class UseCaseService {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
-    private void saveRelations(Integer ucId, List<UseCaseCallDTO> calls, Map<String, Integer> operationIdByGuid) {
+    private void saveRelations(Integer useCaseBranchId, List<UseCaseCallDTO> calls,
+                               Map<String, Integer> operationIdByGuid) {
         List<UsOperationRelation> relations = new ArrayList<>();
         for (UseCaseCallDTO call : calls) {
             String operationGuid = trimToNull(call.getOperationGuid());
             relations.add(UsOperationRelation.builder()
-                    .ucId(ucId)
+                    .useCaseBranchId(useCaseBranchId)
                     .order(call.getOrder())
                     .reqOperationId(operationGuid == null ? null : operationIdByGuid.get(operationGuid))
                     .relatedReqOperationId(operationIdByGuid.get(call.getRelatedOperationGuid().trim()))
