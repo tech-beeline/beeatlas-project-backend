@@ -35,6 +35,7 @@ import ru.beeline.projectbackend.repository.UsOperationRelationRepository;
 import ru.beeline.projectbackend.repository.UseCaseRepository;
 import ru.beeline.projectbackend.utils.InterfaceCodeGenerator;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -260,6 +261,12 @@ public class UseCaseService {
         useCase.setName(info.getName().trim());
         useCase.setDescription(info.getDescription());
         useCase.setBiStepCode(trimToNull(info.getBiStepCode()));
+        if (useCase.getId() == null) {
+            useCase.setCreatedDate(LocalDateTime.now());
+        } else {
+            useCase.setUpdatedDate(LocalDateTime.now());
+            useCase.setDeletedDate(null);
+        }
         return useCaseRepository.save(useCase);
     }
 

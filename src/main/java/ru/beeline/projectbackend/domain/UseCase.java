@@ -6,6 +6,8 @@ package ru.beeline.projectbackend.domain;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
+
 @Data
 @Entity
 @Table(name = "use_case", schema = "projects")
@@ -33,4 +35,13 @@ public class UseCase {
 
     @Column(name = "bi_step_code")
     private String biStepCode;
+
+    @Column(name = "created_date", nullable = false)
+    private LocalDateTime createdDate;
+
+    @Column(name = "updated_date")
+    private LocalDateTime updatedDate;
+
+    @Column(name = "deleted_date")
+    private LocalDateTime deletedDate;
 }
