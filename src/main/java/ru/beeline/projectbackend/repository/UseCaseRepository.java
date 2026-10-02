@@ -15,4 +15,6 @@ public interface UseCaseRepository extends JpaRepository<UseCase, Integer> {
     @Query("SELECT u FROM UseCase u WHERE u.projectId = :projectId AND LOWER(u.code) = LOWER(:code)")
     Optional<UseCase> findByProjectIdAndCodeIgnoreCase(@Param("projectId") Integer projectId,
                                                        @Param("code") String code);
+
+    Optional<UseCase> findByIdAndProjectIdAndDeletedDateIsNull(Integer id, Integer projectId);
 }

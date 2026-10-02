@@ -4,6 +4,7 @@
 package ru.beeline.projectbackend.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +15,11 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import ru.beeline.projectbackend.client.ProductClient;
+import ru.beeline.projectbackend.domain.ArtifactBranch;
+import ru.beeline.projectbackend.domain.Project;
+import ru.beeline.projectbackend.domain.UsOperationRelation;
+import ru.beeline.projectbackend.domain.UseCase;
+import ru.beeline.projectbackend.dto.product.DiscoveredOperationByIdsDTO;
 import ru.beeline.projectbackend.repository.ArtifactBranchRepository;
 import ru.beeline.projectbackend.repository.ProjectRepository;
 import ru.beeline.projectbackend.repository.UseCaseByOperationProjection;
@@ -22,10 +28,12 @@ import ru.beeline.projectbackend.repository.UseCaseRepository;
 import ru.beeline.projectbackend.service.UseCaseService;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -52,7 +60,8 @@ class ProjectUseCaseControllerTest {
                 useCaseRepository, usOperationRelationRepository, productClient);
         mockMvc = MockMvcBuilders.standaloneSetup(new ProjectUseCaseController(useCaseService))
                 .setControllerAdvice(new CustomExceptionHandler())
-                .setMessageConverters(new MappingJackson2HttpMessageConverter(new ObjectMapper()))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(
+                        new ObjectMapper().registerModule(new JavaTimeModule())))
                 .build();
     }
 
@@ -145,6 +154,50 @@ class ProjectUseCaseControllerTest {
                         .content("[20,"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errorMessage").value("Отсутствует тело запроса"));
+    }
+
+    @Test
+    void getUseCaseOperations_returnsTree() throws Exception {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByIdAndProjectIdAndDeletedDateIsNull(7, 1))
+                .thenReturn(Optional.of(UseCase.builder().id(7).projectId(1).build()));
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactIdAndNameIgnoreCase("use_case", 7, "main"))
+                .thenReturn(Optional.of(ArtifactBranch.builder().id(42).artifactType("use_case")
+                        .artifactId(7).name("main").build()));
+        when(usOperationRelationRepository.findAllByUseCaseBranchId(42)).thenReturn(List.of(
+                UsOperationRelation.builder().id(1).useCaseBranchId(42).order(0).relatedReqOperationId(20).build(),
+                UsOperationRelation.builder().id(2).useCaseBranchId(42).order(1)
+                        .reqOperationId(20).relatedReqOperationId(21).build()));
+        when(productClient.getDiscoveredOperationsByIds(List.of(20, 21)))
+                .thenReturn(List.of(DiscoveredOperationByIdsDTO.builder().id(20).name("createOrder").build()));
+
+        mockMvc.perform(get("/api/v1/project/1/use-case/7/operations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].order").value(0))
+                .andExpect(jsonPath("$[0].discoveredOperationId").value(20))
+                .andExpect(jsonPath("$[0].discoveredOperation.name").value("createOrder"))
+                .andExpect(jsonPath("$[0].children[0].discoveredOperationId").value(21))
+                .andExpect(jsonPath("$[0].children[0].discoveredOperation").isEmpty())
+                .andExpect(jsonPath("$[0].children[0].children").isEmpty());
+    }
+
+    @Test
+    void getUseCaseOperations_emptyBranch_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/project/1/use-case/7/operations").param("branch", ""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Имя ветки не может быть пустым"));
+    }
+
+    @Test
+    void getUseCaseOperations_useCaseNotFound_returns404() throws Exception {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByIdAndProjectIdAndDeletedDateIsNull(7, 1)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/project/1/use-case/7/operations"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorMessage").value("Use case не найден"));
     }
 
     private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
