@@ -32,9 +32,12 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static ru.beeline.projectbackend.utils.Constant.CONNECTION_OPERATION_ID_MUST_BE_INTEGER;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -63,6 +66,23 @@ class ProjectUseCaseControllerTest {
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(
                         new ObjectMapper().registerModule(new JavaTimeModule())))
                 .build();
+    }
+
+    @Test
+    void upsertUseCase_connectionOperationIdNotInteger_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/project/1/use-case")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reqOperations\":[{\"connectionOperationId\":\"15\"}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value(CONNECTION_OPERATION_ID_MUST_BE_INTEGER));
+
+        mockMvc.perform(put("/api/v1/project/1/use-case")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reqOperations\":[{\"connectionOperationId\":1.5}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value(CONNECTION_OPERATION_ID_MUST_BE_INTEGER));
+
+        verifyNoInteractions(productClient);
     }
 
     @Test

@@ -21,6 +21,7 @@ import ru.beeline.projectbackend.domain.UsOperationRelation;
 import ru.beeline.projectbackend.domain.UseCase;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceByIdsDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationByIdsDTO;
+import ru.beeline.projectbackend.dto.product.ProductDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
 import ru.beeline.projectbackend.exception.ExternalServiceException;
 import ru.beeline.projectbackend.exception.NotFoundException;
@@ -113,6 +114,65 @@ class UseCaseOperationsTreeServiceTest {
         assertThat(root.getChildren().get(1).getChildren()).isEmpty();
 
         assertThat(capturedIds()).containsExactly(20, 21, 24, 22, 23);
+    }
+
+    @Test
+    @DisplayName("Узел дерева сохраняет product интерфейса из ответа продуктов")
+    void keepsInterfaceProductOnNode() {
+        ProductDTO product = ProductDTO.builder()
+                .id(3)
+                .alias("MYAPP")
+                .name("Заказы")
+                .description("Продукт заказов")
+                .build();
+        DiscoveredOperationByIdsDTO fromProducts = DiscoveredOperationByIdsDTO.builder()
+                .id(20)
+                .isPlanned(false)
+                .discoveredInterface(DiscoveredInterfaceByIdsDTO.builder()
+                        .id(5)
+                        .name("orders-api")
+                        .productId(3)
+                        .productPlanned(null)
+                        .product(product)
+                        .build())
+                .build();
+        when(usOperationRelationRepository.findAllByUseCaseBranchId(BRANCH_ID)).thenReturn(List.of(
+                step(1, 0, null, 20)));
+        when(productClient.getDiscoveredOperationsByIds(List.of(20))).thenReturn(List.of(fromProducts));
+
+        List<UseCaseOperationNodeDTO> tree = service.getOperationsTree(PROJECT_ID, USE_CASE_ID, null);
+
+        assertThat(tree.get(0).getDiscoveredOperation()).isSameAs(fromProducts);
+        assertThat(tree.get(0).getDiscoveredOperation().getDiscoveredInterface().getProduct())
+                .isEqualTo(product);
+        verify(productClient).getDiscoveredOperationsByIds(List.of(20));
+        verify(productClient, never()).upsertUseCaseOperations(any(), any());
+    }
+
+    @Test
+    @DisplayName("Пустой product в ответе продуктов остаётся null, productPlanned не теряется")
+    void keepsNullProductAndProductPlanned() {
+        DiscoveredOperationByIdsDTO fromProducts = DiscoveredOperationByIdsDTO.builder()
+                .id(21)
+                .isPlanned(true)
+                .discoveredInterface(DiscoveredInterfaceByIdsDTO.builder()
+                        .id(6)
+                        .name("stock-api")
+                        .productId(null)
+                        .productPlanned("STOCK")
+                        .product(null)
+                        .build())
+                .build();
+        when(usOperationRelationRepository.findAllByUseCaseBranchId(BRANCH_ID)).thenReturn(List.of(
+                step(1, 0, null, 21)));
+        when(productClient.getDiscoveredOperationsByIds(List.of(21))).thenReturn(List.of(fromProducts));
+
+        UseCaseOperationNodeDTO node = service.getOperationsTree(PROJECT_ID, USE_CASE_ID, null).get(0);
+
+        assertThat(node.getDiscoveredOperation().getIsPlanned()).isTrue();
+        assertThat(node.getDiscoveredOperation().getDiscoveredInterface().getProductId()).isNull();
+        assertThat(node.getDiscoveredOperation().getDiscoveredInterface().getProduct()).isNull();
+        assertThat(node.getDiscoveredOperation().getDiscoveredInterface().getProductPlanned()).isEqualTo("STOCK");
     }
 
     @Test
