@@ -30,6 +30,7 @@ import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceUpsertDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationResultDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationUpsertDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
+import ru.beeline.projectbackend.dto.usecase.ProjectUseCaseResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
@@ -684,6 +685,118 @@ class UseCaseServiceTest {
                 .hasMessage("Use case не найден");
         verify(artifactBranchRepository, never()).findByArtifactTypeAndArtifactId(anyString(), anyInt());
         verifyNoInteractions(productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Живые use case проекта возвращаются по возрастанию id")
+    void getLiveUseCases_returnsCardsOfProjectOrderedById() {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByProjectIdAndDeletedDateIsNullOrderByIdAsc(1)).thenReturn(List.of(
+                liveUseCase(8, 1, "UC-RETURN", "Возврат", null, null),
+                liveUseCase(7, 1, "UC-ORDER", "Оформление заказа", "Клиент оформляет заказ",
+                        LocalDateTime.of(2026, 9, 30, 15, 0, 0))));
+
+        List<ProjectUseCaseResponseDTO> result = service.getLiveUseCases(1);
+
+        assertThat(result).extracting(ProjectUseCaseResponseDTO::getId).containsExactly(7, 8);
+        assertThat(result.get(0).getCode()).isEqualTo("UC-ORDER");
+        assertThat(result.get(0).getName()).isEqualTo("Оформление заказа");
+        assertThat(result.get(0).getDescription()).isEqualTo("Клиент оформляет заказ");
+        assertThat(result.get(0).getProjectId()).isEqualTo(1);
+        assertThat(result.get(0).getCreatedDate()).isEqualTo(LocalDateTime.of(2026, 9, 30, 12, 0, 0));
+        assertThat(result.get(0).getUpdatedDate()).isEqualTo(LocalDateTime.of(2026, 9, 30, 15, 0, 0));
+        assertThat(result.get(1).getCode()).isEqualTo("UC-RETURN");
+        verifyNoInteractions(artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Карточка другого проекта не попадает в список")
+    void getLiveUseCases_excludesCardOfAnotherProject() {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByProjectIdAndDeletedDateIsNullOrderByIdAsc(1)).thenReturn(List.of(
+                liveUseCase(7, 1, "UC-ORDER", "Оформление заказа", null,
+                        LocalDateTime.of(2026, 9, 30, 15, 0, 0)),
+                liveUseCase(9, 2, "UC-OTHER", "Чужой сценарий", null, null)));
+
+        List<ProjectUseCaseResponseDTO> result = service.getLiveUseCases(1);
+
+        assertThat(result).extracting(ProjectUseCaseResponseDTO::getId).containsExactly(7);
+        assertThat(result).extracting(ProjectUseCaseResponseDTO::getProjectId).containsOnly(1);
+        verifyNoInteractions(artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Карточка с deleted_date не попадает в список")
+    void getLiveUseCases_excludesDeletedCard() {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        UseCase deleted = liveUseCase(8, 1, "UC-OLD", "Удалённый", null, null);
+        deleted.setDeletedDate(LocalDateTime.of(2026, 10, 1, 8, 0, 0));
+        when(useCaseRepository.findByProjectIdAndDeletedDateIsNullOrderByIdAsc(1)).thenReturn(List.of(
+                liveUseCase(7, 1, "UC-ORDER", "Оформление заказа", null,
+                        LocalDateTime.of(2026, 9, 30, 15, 0, 0)),
+                deleted));
+
+        List<ProjectUseCaseResponseDTO> result = service.getLiveUseCases(1);
+
+        assertThat(result).extracting(ProjectUseCaseResponseDTO::getId).containsExactly(7);
+        verifyNoInteractions(artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Пустой updatedDate остаётся null")
+    void getLiveUseCases_keepsEmptyUpdatedDateNull() {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByProjectIdAndDeletedDateIsNullOrderByIdAsc(1)).thenReturn(List.of(
+                liveUseCase(8, 1, "UC-RETURN", "Возврат", null, null)));
+
+        List<ProjectUseCaseResponseDTO> result = service.getLiveUseCases(1);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getUpdatedDate()).isNull();
+        assertThat(result.get(0).getDescription()).isNull();
+        assertThat(result.get(0).getCreatedDate()).isEqualTo(LocalDateTime.of(2026, 9, 30, 12, 0, 0));
+        verifyNoInteractions(artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Проект без живых use case — пустой список")
+    void getLiveUseCases_returnsEmptyList() {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByProjectIdAndDeletedDateIsNullOrderByIdAsc(1)).thenReturn(List.of());
+
+        assertThat(service.getLiveUseCases(1)).isEmpty();
+        verifyNoInteractions(artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Удалённый или несуществующий проект — 404, use case не читаются")
+    void getLiveUseCases_deletedProject_throwsNotFound() {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getLiveUseCases(1))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Проект не найден или удален");
+        verify(useCaseRepository, never()).findByProjectIdAndDeletedDateIsNullOrderByIdAsc(any());
+        verifyNoInteractions(artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    private UseCase liveUseCase(Integer id, Integer projectId, String code, String name,
+                                String description, LocalDateTime updatedDate) {
+        return UseCase.builder()
+                .id(id)
+                .projectId(projectId)
+                .code(code)
+                .name(name)
+                .description(description)
+                .createdDate(LocalDateTime.of(2026, 9, 30, 12, 0, 0))
+                .updatedDate(updatedDate)
+                .deletedDate(null)
+                .build();
     }
 
     private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,

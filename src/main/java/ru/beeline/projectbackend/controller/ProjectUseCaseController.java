@@ -6,6 +6,11 @@ package ru.beeline.projectbackend.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
@@ -19,13 +24,17 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import ru.beeline.projectbackend.dto.error.ErrorResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
+import ru.beeline.projectbackend.dto.usecase.ProjectUseCaseResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
 import ru.beeline.projectbackend.service.UseCaseService;
 
 import java.util.List;
+
+import static ru.beeline.projectbackend.utils.Constant.ID_MUST_BE_POSITIVE;
 
 
 @RestController
@@ -37,6 +46,26 @@ import java.util.List;
 public class ProjectUseCaseController {
 
     private final UseCaseService useCaseService;
+
+    @GetMapping("/{projectId}/use-cases")
+    @Operation(summary = "Получить живые use case проекта",
+            description = "Возвращает карточки сценариев проекта, у которых deleted_date пустой. "
+                    + "Карточка привязана к проекту напрямую (use_case.project_id). "
+                    + "Шаги us_operation_relation и ветки use case не возвращаются. "
+                    + "Проект без живых use case — пустой массив.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Живые use case проекта",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = ProjectUseCaseResponseDTO.class)))),
+            @ApiResponse(responseCode = "400", description = "projectId не является целым положительным числом",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDTO.class))),
+            @ApiResponse(responseCode = "404", description = "Проект не найден или удален",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDTO.class)))
+    })
+    public ResponseEntity<List<ProjectUseCaseResponseDTO>> getLiveUseCases(
+            @Parameter(description = "Идентификатор проекта, целое положительное")
+            @PathVariable @Positive(message = ID_MUST_BE_POSITIVE) Integer projectId) {
+        return ResponseEntity.ok(useCaseService.getLiveUseCases(projectId));
+    }
 
     @PutMapping("/{projectId}/use-case")
     @Operation(summary = "Создать или обновить use case проекта",

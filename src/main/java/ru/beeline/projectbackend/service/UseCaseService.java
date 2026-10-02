@@ -149,6 +149,31 @@ public class UseCaseService {
     }
 
     @Transactional(readOnly = true)
+    public List<ProjectUseCaseResponseDTO> getLiveUseCases(Integer projectId) {
+        log.info("UseCase list: обработка, projectId={}", projectId);
+        Project project = projectRepository.findByIdAndDeleteDateIsNull(projectId)
+                .orElseThrow(() -> new NotFoundException(PROJECT_NOT_FOUND_OR_DELETED));
+        List<ProjectUseCaseResponseDTO> result = useCaseRepository
+                .findByProjectIdAndDeletedDateIsNullOrderByIdAsc(project.getId())
+                .stream()
+                .filter(useCase -> project.getId().equals(useCase.getProjectId()))
+                .filter(useCase -> useCase.getDeletedDate() == null)
+                .sorted(Comparator.comparing(UseCase::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(useCase -> ProjectUseCaseResponseDTO.builder()
+                        .id(useCase.getId())
+                        .code(useCase.getCode())
+                        .name(useCase.getName())
+                        .description(useCase.getDescription())
+                        .projectId(useCase.getProjectId())
+                        .createdDate(useCase.getCreatedDate())
+                        .updatedDate(useCase.getUpdatedDate())
+                        .build())
+                .toList();
+        log.info("UseCase list: завершён, projectId={}, карточек={}", project.getId(), result.size());
+        return result;
+    }
+
+    @Transactional(readOnly = true)
     public List<UseCaseOperationNodeDTO> getOperationsTree(Integer projectId, Integer useCaseId, String branch) {
         String branchName = resolveBranchName(branch);
         log.info("UseCase operations tree: обработка, projectId={}, useCaseId={}, branch={}",

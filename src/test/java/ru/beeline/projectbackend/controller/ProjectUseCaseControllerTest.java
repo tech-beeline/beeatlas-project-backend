@@ -27,9 +27,11 @@ import ru.beeline.projectbackend.repository.UsOperationRelationRepository;
 import ru.beeline.projectbackend.repository.UseCaseRepository;
 import ru.beeline.projectbackend.service.UseCaseService;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -66,6 +68,68 @@ class ProjectUseCaseControllerTest {
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(
                         new ObjectMapper().registerModule(new JavaTimeModule())))
                 .build();
+    }
+
+    @Test
+    void getLiveUseCases_returnsCardsWithoutDeletedDateAndBranches() throws Exception {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByProjectIdAndDeletedDateIsNullOrderByIdAsc(1)).thenReturn(List.of(
+                UseCase.builder().id(8).projectId(1).code("UC-RETURN").name("Возврат")
+                        .createdDate(LocalDateTime.of(2026, 9, 30, 12, 5, 0)).build(),
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER").name("Оформление заказа")
+                        .description("Клиент оформляет заказ")
+                        .createdDate(LocalDateTime.of(2026, 9, 30, 12, 0, 0))
+                        .updatedDate(LocalDateTime.of(2026, 9, 30, 15, 0, 0)).build()));
+
+        mockMvc.perform(get("/api/v1/project/1/use-cases"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(7))
+                .andExpect(jsonPath("$[0].code").value("UC-ORDER"))
+                .andExpect(jsonPath("$[0].name").value("Оформление заказа"))
+                .andExpect(jsonPath("$[0].description").value("Клиент оформляет заказ"))
+                .andExpect(jsonPath("$[0].projectId").value(1))
+                .andExpect(jsonPath("$[0].createdDate").value("2026-09-30T12:00:00"))
+                .andExpect(jsonPath("$[0].updatedDate").value("2026-09-30T15:00:00"))
+                .andExpect(jsonPath("$[0].deletedDate").doesNotExist())
+                .andExpect(jsonPath("$[0].branch").doesNotExist())
+                .andExpect(jsonPath("$[0].projectBranchId").doesNotExist())
+                .andExpect(jsonPath("$[1].id").value(8))
+                .andExpect(jsonPath("$[1].code").value("UC-RETURN"))
+                .andExpect(jsonPath("$[1].description").value(nullValue()))
+                .andExpect(jsonPath("$[1].updatedDate").value(nullValue()))
+                .andExpect(jsonPath("$[1].createdDate").value("2026-09-30T12:05:00"));
+        verifyNoInteractions(artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    void getLiveUseCases_empty_returnsEmptyArray() throws Exception {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1))
+                .thenReturn(Optional.of(Project.builder().id(1).build()));
+        when(useCaseRepository.findByProjectIdAndDeletedDateIsNullOrderByIdAsc(1)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/project/1/use-cases"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void getLiveUseCases_deletedProject_returns404() throws Exception {
+        when(projectRepository.findByIdAndDeleteDateIsNull(1)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/v1/project/1/use-cases"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.errorMessage").value("Проект не найден или удален"));
+        verifyNoInteractions(useCaseRepository, artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    void getLiveUseCases_nonNumericProjectId_returns400() throws Exception {
+        mockMvc.perform(get("/api/v1/project/abc/use-cases"))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(projectRepository, useCaseRepository, artifactBranchRepository, productClient,
+                usOperationRelationRepository);
     }
 
     @Test
