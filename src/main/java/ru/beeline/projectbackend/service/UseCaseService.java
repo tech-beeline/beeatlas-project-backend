@@ -14,49 +14,18 @@ import ru.beeline.projectbackend.domain.ArtifactBranch;
 import ru.beeline.projectbackend.domain.Project;
 import ru.beeline.projectbackend.domain.UsOperationRelation;
 import ru.beeline.projectbackend.domain.UseCase;
-import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceResultDTO;
-import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceUpsertDTO;
-import ru.beeline.projectbackend.dto.product.DiscoveredOperationByIdsDTO;
-import ru.beeline.projectbackend.dto.product.DiscoveredOperationResultDTO;
-import ru.beeline.projectbackend.dto.product.DiscoveredOperationUpsertDTO;
-import ru.beeline.projectbackend.dto.usecase.OperationUseCaseDTO;
-import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
-import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
-import ru.beeline.projectbackend.dto.usecase.UseCaseBranchDTO;
-import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
-import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
-import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
-import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
-import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
-import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
+import ru.beeline.projectbackend.dto.product.*;
+import ru.beeline.projectbackend.dto.usecase.*;
 import ru.beeline.projectbackend.exception.ExternalServiceException;
 import ru.beeline.projectbackend.exception.NotFoundException;
 import ru.beeline.projectbackend.exception.ValidationException;
-import ru.beeline.projectbackend.repository.ArtifactBranchRepository;
-import ru.beeline.projectbackend.repository.ProjectRepository;
-import ru.beeline.projectbackend.repository.UseCaseByOperationProjection;
-import ru.beeline.projectbackend.repository.UsOperationRelationRepository;
-import ru.beeline.projectbackend.repository.UseCaseRepository;
+import ru.beeline.projectbackend.repository.*;
 import ru.beeline.projectbackend.utils.InterfaceCodeGenerator;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.NavigableSet;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 
-import static ru.beeline.projectbackend.utils.Constant.BLANK_OPERATION_ID;
-import static ru.beeline.projectbackend.utils.Constant.EMPTY_OPERATION_IDS;
-import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
+import static ru.beeline.projectbackend.utils.Constant.*;
 
 @Service
 @Slf4j
@@ -352,7 +321,6 @@ public class UseCaseService {
                 throw new ValidationException("Пустой элемент в reqOperations");
             }
             requireNonBlank(reqOperation.getGuid(), "reqOperations.guid");
-            requireNonBlank(reqOperation.getProduct(), "reqOperations.product");
             requireNonBlank(reqOperation.getName(), "reqOperations.name");
             requireNonBlank(reqOperation.getType(), "reqOperations.type");
             String guid = reqOperation.getGuid().trim();
@@ -411,17 +379,26 @@ public class UseCaseService {
             DiscoveredOperationUpsertDTO operation = toOperation(reqOperation);
             String productPlanned = trimToNull(reqOperation.getProductPlanned());
             if (interfaceCode == null) {
-                standalone.add(DiscoveredInterfaceUpsertDTO.builder()
-                        .interfaceCode(InterfaceCodeGenerator.crc32(
-                                reqOperation.getName(),
-                                reqOperation.getType(),
-                                reqOperation.getDescriptionTc(),
-                                reqOperation.getTcCode(),
-                                reqOperation.getDescriptionOperation()))
-                        .product(reqOperation.getProduct().trim())
-                        .productPlanned(productPlanned)
-                        .operations(new ArrayList<>(List.of(operation)))
-                        .build());
+                DiscoveredInterfaceUpsertDTO.DiscoveredInterfaceUpsertDTOBuilder builder =
+                        DiscoveredInterfaceUpsertDTO.builder()
+                                .interfaceCode(InterfaceCodeGenerator.crc32(
+                                        reqOperation.getName(),
+                                        reqOperation.getType(),
+                                        reqOperation.getDescriptionTc(),
+                                        reqOperation.getTcCode(),
+                                        reqOperation.getDescriptionOperation()))
+                                .operations(new ArrayList<>(List.of(operation)));
+
+                String product = reqOperation.getProduct();
+                if (product != null && !product.trim().isEmpty()) {
+                    builder.product(product.trim());
+                }
+
+                if (productPlanned != null) {
+                    builder.productPlanned(productPlanned);
+                }
+
+                standalone.add(builder.build());
                 continue;
             }
             String product = reqOperation.getProduct().trim();
