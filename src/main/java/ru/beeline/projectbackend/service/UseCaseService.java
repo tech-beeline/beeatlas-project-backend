@@ -16,6 +16,7 @@ import ru.beeline.projectbackend.domain.UsOperationRelation;
 import ru.beeline.projectbackend.domain.UseCase;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceResultDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceUpsertDTO;
+import ru.beeline.projectbackend.dto.product.DiscoveredOperationByIdsDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationResultDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationUpsertDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCaseDTO;
@@ -23,6 +24,7 @@ import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
 import ru.beeline.projectbackend.exception.ExternalServiceException;
@@ -38,6 +40,7 @@ import ru.beeline.projectbackend.utils.InterfaceCodeGenerator;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -62,6 +65,9 @@ public class UseCaseService {
     private static final String ARTIFACT_TYPE_USE_CASE = "use_case";
     private static final String UNKNOWN_GUID_MESSAGE = "useCaseCall ссылается на неизвестный guid reqOperation";
     private static final String EMPTY_BRANCH_MESSAGE = "Имя ветки не может быть пустым";
+    private static final String PROJECT_NOT_FOUND_OR_DELETED = "Проект не найден или удален";
+    private static final String USE_CASE_NOT_FOUND = "Use case не найден";
+    private static final String USE_CASE_BRANCH_NOT_FOUND = "Ветка use case не найдена";
 
     private final ProjectRepository projectRepository;
     private final ArtifactBranchRepository artifactBranchRepository;
@@ -139,6 +145,100 @@ public class UseCaseService {
                     .build());
         }
         return response;
+    }
+
+    @Transactional(readOnly = true)
+    public List<UseCaseOperationNodeDTO> getOperationsTree(Integer projectId, Integer useCaseId, String branch) {
+        String branchName = resolveBranchName(branch);
+        log.info("UseCase operations tree: обработка, projectId={}, useCaseId={}, branch={}",
+                projectId, useCaseId, branchName);
+        projectRepository.findByIdAndDeleteDateIsNull(projectId)
+                .orElseThrow(() -> new NotFoundException(PROJECT_NOT_FOUND_OR_DELETED));
+        UseCase useCase = useCaseRepository.findByIdAndProjectIdAndDeletedDateIsNull(useCaseId, projectId)
+                .orElseThrow(() -> new NotFoundException(USE_CASE_NOT_FOUND));
+        ArtifactBranch useCaseBranch = artifactBranchRepository
+                .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(ARTIFACT_TYPE_USE_CASE, useCase.getId(), branchName)
+                .orElseThrow(() -> new NotFoundException(USE_CASE_BRANCH_NOT_FOUND));
+
+        List<UsOperationRelation> steps = usOperationRelationRepository.findAllByUseCaseBranchId(useCaseBranch.getId());
+        if (steps.isEmpty()) {
+            log.info("UseCase operations tree: шагов нет, useCaseBranchId={}", useCaseBranch.getId());
+            return List.of();
+        }
+
+        Comparator<UsOperationRelation> byOrderThenId = Comparator
+                .comparing(UsOperationRelation::getOrder, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(UsOperationRelation::getId, Comparator.nullsLast(Comparator.naturalOrder()));
+        List<UsOperationRelation> rootSteps = new ArrayList<>();
+        Map<Integer, List<UsOperationRelation>> stepsByCaller = new HashMap<>();
+        for (UsOperationRelation step : steps) {
+            if (step.getReqOperationId() == null) {
+                rootSteps.add(step);
+            } else {
+                stepsByCaller.computeIfAbsent(step.getReqOperationId(), ignored -> new ArrayList<>()).add(step);
+            }
+        }
+        rootSteps.sort(byOrderThenId);
+        stepsByCaller.values().forEach(children -> children.sort(byOrderThenId));
+
+        List<UseCaseOperationNodeDTO> roots = new ArrayList<>(rootSteps.size());
+        Set<Integer> path = new HashSet<>();
+        for (UsOperationRelation rootStep : rootSteps) {
+            roots.add(buildNode(rootStep, stepsByCaller, path));
+        }
+
+        Set<Integer> operationIds = new LinkedHashSet<>();
+        collectOperationIds(roots, operationIds);
+        if (operationIds.isEmpty()) {
+            return roots;
+        }
+        List<DiscoveredOperationByIdsDTO> operations =
+                productClient.getDiscoveredOperationsByIds(new ArrayList<>(operationIds));
+        Map<Integer, DiscoveredOperationByIdsDTO> operationById = new HashMap<>();
+        for (DiscoveredOperationByIdsDTO operation : operations) {
+            if (operation != null && operation.getId() != null) {
+                operationById.putIfAbsent(operation.getId(), operation);
+            }
+        }
+        fillDiscoveredOperations(roots, operationById);
+        log.info("UseCase operations tree: завершён, useCaseBranchId={}, шагов={}, корней={}, методов={}",
+                useCaseBranch.getId(), steps.size(), roots.size(), operationIds.size());
+        return roots;
+    }
+
+    private UseCaseOperationNodeDTO buildNode(UsOperationRelation step,
+                                              Map<Integer, List<UsOperationRelation>> stepsByCaller,
+                                              Set<Integer> path) {
+        Integer operationId = step.getRelatedReqOperationId();
+        UseCaseOperationNodeDTO node = UseCaseOperationNodeDTO.builder()
+                .order(step.getOrder())
+                .discoveredOperationId(operationId)
+                .build();
+        if (operationId == null || !path.add(operationId)) {
+            return node;
+        }
+        for (UsOperationRelation child : stepsByCaller.getOrDefault(operationId, List.of())) {
+            node.getChildren().add(buildNode(child, stepsByCaller, path));
+        }
+        path.remove(operationId);
+        return node;
+    }
+
+    private void collectOperationIds(List<UseCaseOperationNodeDTO> nodes, Set<Integer> operationIds) {
+        for (UseCaseOperationNodeDTO node : nodes) {
+            if (node.getDiscoveredOperationId() != null) {
+                operationIds.add(node.getDiscoveredOperationId());
+            }
+            collectOperationIds(node.getChildren(), operationIds);
+        }
+    }
+
+    private void fillDiscoveredOperations(List<UseCaseOperationNodeDTO> nodes,
+                                          Map<Integer, DiscoveredOperationByIdsDTO> operationById) {
+        for (UseCaseOperationNodeDTO node : nodes) {
+            node.setDiscoveredOperation(operationById.get(node.getDiscoveredOperationId()));
+            fillDiscoveredOperations(node.getChildren(), operationById);
+        }
     }
 
     private void collectUseCase(Map<Integer, NavigableSet<Integer>> ucIdsByOperation, Set<Integer> requested,

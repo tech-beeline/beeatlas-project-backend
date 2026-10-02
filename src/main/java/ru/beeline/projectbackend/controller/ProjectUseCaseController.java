@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
 import ru.beeline.projectbackend.service.UseCaseService;
@@ -46,6 +48,20 @@ public class ProjectUseCaseController {
             @RequestParam(required = false) String branch,
             @RequestBody(required = false) UseCaseUpsertRequestDTO request) {
         return ResponseEntity.ok(useCaseService.upsert(projectId, branch, request));
+    }
+
+    @GetMapping("/{projectId}/use-case/{useCaseId}/operations")
+    @Operation(summary = "Получить дерево вызовов методов ветки use case",
+            description = "Возвращает методы выбранной ветки use case в виде дерева вызовов: "
+                    + "корни — стартовые методы, дочерние узлы — методы, которые они вызывают. "
+                    + "Каждый узел содержит информацию о методе, его интерфейсе и технической возможности. "
+                    + "Ветка по умолчанию — main. Если в ветке нет методов, возвращается пустой список.")
+    public ResponseEntity<List<UseCaseOperationNodeDTO>> getUseCaseOperations(
+            @Parameter(description = "Идентификатор проекта") @PathVariable @Positive Integer projectId,
+            @Parameter(description = "Идентификатор use case") @PathVariable @Positive Integer useCaseId,
+            @Parameter(description = "Ветка use case, по умолчанию main")
+            @RequestParam(required = false) String branch) {
+        return ResponseEntity.ok(useCaseService.getOperationsTree(projectId, useCaseId, branch));
     }
 
     @PostMapping("/use-cases/by-operations")

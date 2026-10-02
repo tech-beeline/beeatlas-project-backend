@@ -18,6 +18,8 @@ public interface UsOperationRelationRepository extends JpaRepository<UsOperation
     @Query("DELETE FROM UsOperationRelation r WHERE r.useCaseBranchId = :useCaseBranchId")
     int deleteAllByUseCaseBranchId(@Param("useCaseBranchId") Integer useCaseBranchId);
 
+    List<UsOperationRelation> findAllByUseCaseBranchId(Integer useCaseBranchId);
+
     @Query("SELECT r.reqOperationId AS reqOperationId, r.relatedReqOperationId AS relatedReqOperationId, "
             + "u.id AS ucId, u.name AS ucName "
             + "FROM UsOperationRelation r, ArtifactBranch b, UseCase u "
