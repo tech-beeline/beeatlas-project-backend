@@ -31,5 +31,6 @@ public class OperationWithTechCapabilityDTO {
     private LocalDateTime createdDate;
     private LocalDateTime updatedDate;
     private LocalDateTime deletedDate;
+    @Schema(description = "ТС из capability по operation.tc_id; null, если совпадения нет")
     private TcDTO techCapability;
 }

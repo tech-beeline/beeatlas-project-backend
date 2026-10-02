@@ -3,6 +3,7 @@
  */
 package ru.beeline.projectbackend.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -27,9 +28,11 @@ import ru.beeline.projectbackend.domain.UseCase;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceResultDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceUpsertDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationResultDTO;
+import ru.beeline.projectbackend.dto.product.DiscoveredOperationUpsertDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
@@ -42,6 +45,7 @@ import ru.beeline.projectbackend.repository.UsOperationRelationRepository;
 import ru.beeline.projectbackend.repository.UseCaseByOperationProjection;
 import ru.beeline.projectbackend.repository.UseCaseRepository;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -239,6 +243,45 @@ class UseCaseServiceTest {
         assertThat(standalone.getProductPlanned()).isEqualTo("MYAPP-PLAN2");
         assertThat(standalone.getOperations()).extracting(op -> op.getName()).containsExactly("listOrders");
         assertThat(standalone.getOperations().get(0).getIsPlanned()).isFalse();
+    }
+
+    @Test
+    @DisplayName("connectionOperationId уходит числом в operations тела продуктов, guid не включается")
+    void sendsConnectionOperationIdToProductService() throws Exception {
+        UseCaseUpsertRequestDTO withId = request();
+        withId.getReqOperations().get(0).setConnectionOperationId(15);
+        service.upsert(PROJECT_ID, "main", withId);
+
+        DiscoveredOperationUpsertDTO operation = capturedPayload().get(0).getOperations().get(0);
+        assertThat(operation.getName()).isEqualTo("getOrder");
+        assertThat(operation.getConnectionOperationId()).isEqualTo(15);
+        JsonNode json = new ObjectMapper().valueToTree(operation);
+        assertThat(json.get("connectionOperationId").isIntegralNumber()).isTrue();
+        assertThat(json.get("connectionOperationId").intValue()).isEqualTo(15);
+        assertThat(json.has("guid")).isFalse();
+        assertThat(capturedPayload().get(0).getOperations().get(1).getConnectionOperationId()).isNull();
+    }
+
+    @Test
+    @DisplayName("Нет connectionOperationId или null — ключ в теле продуктов отсутствует")
+    void omitsConnectionOperationIdWhenAbsentOrNull() throws Exception {
+        UseCaseUpsertRequestDTO explicitNull = request();
+        explicitNull.getReqOperations().forEach(operation -> operation.setConnectionOperationId(null));
+
+        service.upsert(PROJECT_ID, "main", request());
+        service.upsert(PROJECT_ID, "main", explicitNull);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<DiscoveredInterfaceUpsertDTO>> captor = ArgumentCaptor.forClass(List.class);
+        verify(productClient, times(2)).upsertUseCaseOperations(eq(USE_CASE_ID), captor.capture());
+        ObjectMapper mapper = new ObjectMapper();
+        for (List<DiscoveredInterfaceUpsertDTO> payload : captor.getAllValues()) {
+            for (DiscoveredInterfaceUpsertDTO iface : payload) {
+                for (DiscoveredOperationUpsertDTO operation : iface.getOperations()) {
+                    assertThat(mapper.valueToTree(operation).has("connectionOperationId")).isFalse();
+                }
+            }
+        }
     }
 
     @Test
@@ -549,6 +592,98 @@ class UseCaseServiceTest {
                 .containsExactly(20, 10);
         assertThat(response.get(0).getUseCases()).isEmpty();
         assertThat(response.get(1).getUseCases()).extracting(uc -> uc.getId()).containsExactly(7);
+    }
+
+    @Test
+    @DisplayName("Карточка с ветками: сортировка по name, затем по id; пустые biStepCode и updatedDate — null")
+    void getCard_returnsBranchesSortedAndNullsBlankBiStepCodeAndUpdatedDate() {
+        LocalDateTime created = LocalDateTime.of(2026, 9, 30, 12, 0, 0);
+        when(useCaseRepository.findById(7)).thenReturn(Optional.of(UseCase.builder()
+                .id(7)
+                .projectId(1)
+                .code("UC-ORDER")
+                .name("Оформление заказа")
+                .description("Клиент оформляет заказ")
+                .biStepCode("   ")
+                .createdDate(created)
+                .updatedDate(null)
+                .deletedDate(null)
+                .build()));
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactId("use_case", 7)).thenReturn(List.of(
+                ArtifactBranch.builder().id(4).artifactType("use_case").artifactId(7).name("main").build(),
+                ArtifactBranch.builder().id(8).artifactType("use_case").artifactId(7).name("main").build(),
+                ArtifactBranch.builder().id(5).artifactType("use_case").artifactId(7).name("design").build()));
+
+        UseCaseCardResponseDTO card = service.getCard(7);
+
+        assertThat(card.getId()).isEqualTo(7);
+        assertThat(card.getProjectId()).isEqualTo(1);
+        assertThat(card.getCode()).isEqualTo("UC-ORDER");
+        assertThat(card.getName()).isEqualTo("Оформление заказа");
+        assertThat(card.getDescription()).isEqualTo("Клиент оформляет заказ");
+        assertThat(card.getBiStepCode()).isNull();
+        assertThat(card.getCreatedDate()).isEqualTo(created);
+        assertThat(card.getUpdatedDate()).isNull();
+        assertThat(card.getDeletedDate()).isNull();
+        assertThat(card.getBranches()).extracting(branch -> branch.getName()).containsExactly("design", "main", "main");
+        assertThat(card.getBranches()).extracting(branch -> branch.getId()).containsExactly(5, 4, 8);
+        verifyNoInteractions(productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Карточка с deletedDate возвращается вместе с датой, это не 404")
+    void getCard_returnsDeletedCard() {
+        LocalDateTime deleted = LocalDateTime.of(2026, 10, 1, 8, 30, 0);
+        when(useCaseRepository.findById(7)).thenReturn(Optional.of(UseCase.builder()
+                .id(7)
+                .projectId(1)
+                .code("UC-ORDER")
+                .name("Оформление заказа")
+                .biStepCode("BI-STEP-1")
+                .createdDate(LocalDateTime.of(2026, 9, 30, 12, 0, 0))
+                .updatedDate(LocalDateTime.of(2026, 9, 30, 15, 0, 0))
+                .deletedDate(deleted)
+                .build()));
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactId("use_case", 7)).thenReturn(List.of(
+                ArtifactBranch.builder().id(4).artifactType("use_case").artifactId(7).name("main").build()));
+
+        UseCaseCardResponseDTO card = service.getCard(7);
+
+        assertThat(card.getDeletedDate()).isEqualTo(deleted);
+        assertThat(card.getBiStepCode()).isEqualTo("BI-STEP-1");
+        assertThat(card.getBranches()).extracting(branch -> branch.getId()).containsExactly(4);
+        verifyNoInteractions(productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Нет веток — карточка возвращается с branches = []")
+    void getCard_returnsEmptyBranches() {
+        when(useCaseRepository.findById(7)).thenReturn(Optional.of(UseCase.builder()
+                .id(7)
+                .projectId(1)
+                .code("UC-ORDER")
+                .name("Оформление заказа")
+                .createdDate(LocalDateTime.of(2026, 9, 30, 12, 0, 0))
+                .build()));
+        when(artifactBranchRepository.findByArtifactTypeAndArtifactId("use_case", 7)).thenReturn(List.of());
+
+        UseCaseCardResponseDTO card = service.getCard(7);
+
+        assertThat(card.getId()).isEqualTo(7);
+        assertThat(card.getBranches()).isEmpty();
+        verifyNoInteractions(productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Неизвестный id — 404 Use case не найден, ветки не читаются")
+    void getCard_unknownId_throwsNotFound() {
+        when(useCaseRepository.findById(99)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getCard(99))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("Use case не найден");
+        verify(artifactBranchRepository, never()).findByArtifactTypeAndArtifactId(anyString(), anyInt());
+        verifyNoInteractions(productClient, usOperationRelationRepository);
     }
 
     private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,

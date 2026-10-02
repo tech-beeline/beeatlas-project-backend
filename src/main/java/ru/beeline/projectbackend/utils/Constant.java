@@ -9,4 +9,6 @@ public class Constant {
     public static final String MISSING_REQUEST_BODY = "Отсутствует тело запроса";
     public static final String EMPTY_OPERATION_IDS = "Список идентификаторов методов не может быть пустым";
     public static final String BLANK_OPERATION_ID = "Идентификатор метода не может быть пустым";
+    public static final String CONNECTION_OPERATION_ID_MUST_BE_INTEGER =
+            "Поле connectionOperationId должно быть целым числом";
 }

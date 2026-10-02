@@ -29,6 +29,7 @@ import ru.beeline.projectbackend.exception.S3Exception;
 import ru.beeline.projectbackend.exception.ValidationException;
 
 import static ru.beeline.projectbackend.utils.Constant.BLANK_OPERATION_ID;
+import static ru.beeline.projectbackend.utils.Constant.CONNECTION_OPERATION_ID_MUST_BE_INTEGER;
 import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 
 @ControllerAdvice
@@ -47,13 +48,28 @@ public class CustomExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Object> handleUnreadableBody(HttpMessageNotReadableException e,
                                                        HttpServletRequest request) {
-        String message = MISSING_REQUEST_BODY;
-        if (request.getRequestURI() != null && request.getRequestURI().endsWith(USE_CASES_BY_OPERATIONS_PATH)
-                && isElementError(e)) {
-            message = BLANK_OPERATION_ID;
+        String message = connectionOperationIdError(e);
+        if (message == null) {
+            message = MISSING_REQUEST_BODY;
+            if (request.getRequestURI() != null && request.getRequestURI().endsWith(USE_CASES_BY_OPERATIONS_PATH)
+                    && isElementError(e)) {
+                message = BLANK_OPERATION_ID;
+            }
         }
         log.error(message);
         return errorResponse(HttpStatus.BAD_REQUEST, message);
+    }
+
+    private String connectionOperationIdError(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof JsonMappingException mapping
+                    && CONNECTION_OPERATION_ID_MUST_BE_INTEGER.equals(mapping.getOriginalMessage())) {
+                return CONNECTION_OPERATION_ID_MUST_BE_INTEGER;
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private boolean isElementError(HttpMessageNotReadableException e) {

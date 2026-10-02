@@ -22,7 +22,9 @@ import ru.beeline.projectbackend.dto.product.DiscoveredOperationUpsertDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCaseDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseBranchDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
@@ -145,6 +147,36 @@ public class UseCaseService {
                     .build());
         }
         return response;
+    }
+
+    @Transactional(readOnly = true)
+    public UseCaseCardResponseDTO getCard(Integer useCaseId) {
+        log.info("UseCase card: обработка, useCaseId={}", useCaseId);
+        UseCase useCase = useCaseRepository.findById(useCaseId)
+                .orElseThrow(() -> new NotFoundException(USE_CASE_NOT_FOUND));
+        List<UseCaseBranchDTO> branches = artifactBranchRepository
+                .findByArtifactTypeAndArtifactId(ARTIFACT_TYPE_USE_CASE, useCase.getId())
+                .stream()
+                .sorted(Comparator.comparing(ArtifactBranch::getName, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(ArtifactBranch::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(branch -> UseCaseBranchDTO.builder()
+                        .id(branch.getId())
+                        .name(branch.getName())
+                        .build())
+                .toList();
+        log.info("UseCase card: завершён, useCaseId={}, веток={}", useCase.getId(), branches.size());
+        return UseCaseCardResponseDTO.builder()
+                .id(useCase.getId())
+                .projectId(useCase.getProjectId())
+                .code(useCase.getCode())
+                .name(useCase.getName())
+                .description(useCase.getDescription())
+                .biStepCode(trimToNull(useCase.getBiStepCode()))
+                .createdDate(useCase.getCreatedDate())
+                .updatedDate(useCase.getUpdatedDate())
+                .deletedDate(useCase.getDeletedDate())
+                .branches(branches)
+                .build();
     }
 
     @Transactional(readOnly = true)
@@ -423,6 +455,7 @@ public class UseCaseService {
                 .tcCode(reqOperation.getTcCode())
                 .descriptionOperation(reqOperation.getDescriptionOperation())
                 .isPlanned(reqOperation.getIsPlanned())
+                .connectionOperationId(reqOperation.getConnectionOperationId())
                 .build();
     }
 

@@ -34,10 +34,9 @@ public class DiscoveredOperationByIdsDTO {
     private Double rps;
     private Double latency;
     private Double errorRate;
-    private DiscoveredInterfaceByIdsDTO discoveredInterface;
-    private OperationWithTechCapabilityDTO operation;
     private LocalDateTime createdDate;
     private LocalDateTime updatedDate;
     private LocalDateTime deletedDate;
-
+    private DiscoveredInterfaceByIdsDTO discoveredInterface;
+    private OperationWithTechCapabilityDTO operation;
 }
