@@ -26,7 +26,6 @@ public class UsOperationRelation {
     @Column(name = "\"order\"", nullable = false)
     private Integer order;
 
-    /** Вызывающая операция; NULL у стартового шага. */
     @Column(name = "req_operation_id")
     private Integer reqOperationId;
 

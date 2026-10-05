@@ -23,4 +23,5 @@ public class TcDTO {
     private String name;
     private Date createdDate;
     private Date deletedDate;
+    private Date updatedDate;
 }

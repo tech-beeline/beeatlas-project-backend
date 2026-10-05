@@ -185,13 +185,11 @@ public class UseCaseService {
         ArtifactBranch useCaseBranch = artifactBranchRepository
                 .findByArtifactTypeAndArtifactIdAndNameIgnoreCase(ARTIFACT_TYPE_USE_CASE, useCase.getId(), branchName)
                 .orElseThrow(() -> new NotFoundException(USE_CASE_BRANCH_NOT_FOUND));
-
         List<UsOperationRelation> steps = usOperationRelationRepository.findAllByUseCaseBranchId(useCaseBranch.getId());
         if (steps.isEmpty()) {
             log.info("UseCase operations tree: шагов нет, useCaseBranchId={}", useCaseBranch.getId());
             return List.of();
         }
-
         Comparator<UsOperationRelation> byOrderThenId = Comparator
                 .comparing(UsOperationRelation::getOrder, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(UsOperationRelation::getId, Comparator.nullsLast(Comparator.naturalOrder()));
@@ -206,13 +204,11 @@ public class UseCaseService {
         }
         rootSteps.sort(byOrderThenId);
         stepsByCaller.values().forEach(children -> children.sort(byOrderThenId));
-
         List<UseCaseOperationNodeDTO> roots = new ArrayList<>(rootSteps.size());
         Set<Integer> path = new HashSet<>();
         for (UsOperationRelation rootStep : rootSteps) {
             roots.add(buildNode(rootStep, stepsByCaller, path));
         }
-
         Set<Integer> operationIds = new LinkedHashSet<>();
         collectOperationIds(roots, operationIds);
         if (operationIds.isEmpty()) {
