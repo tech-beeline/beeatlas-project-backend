@@ -28,6 +28,7 @@ import ru.beeline.projectbackend.exception.NotFoundException;
 import ru.beeline.projectbackend.exception.S3Exception;
 import ru.beeline.projectbackend.exception.ValidationException;
 
+import static ru.beeline.projectbackend.utils.Constant.BLANK_BI_STEP_CODE;
 import static ru.beeline.projectbackend.utils.Constant.BLANK_OPERATION_ID;
 import static ru.beeline.projectbackend.utils.Constant.CONNECTION_OPERATION_ID_MUST_BE_INTEGER;
 import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
@@ -37,6 +38,7 @@ import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 public class CustomExceptionHandler {
 
     private static final String USE_CASES_BY_OPERATIONS_PATH = "/use-cases/by-operations";
+    private static final String USE_CASES_BY_BI_STEP_CODES_PATH = "/use-cases/by-bi-step-codes";
 
     private static ResponseEntity<Object> errorResponse(HttpStatus status, String message) {
         return ResponseEntity
@@ -51,9 +53,13 @@ public class CustomExceptionHandler {
         String message = connectionOperationIdError(e);
         if (message == null) {
             message = MISSING_REQUEST_BODY;
-            if (request.getRequestURI() != null && request.getRequestURI().endsWith(USE_CASES_BY_OPERATIONS_PATH)
-                    && isElementError(e)) {
-                message = BLANK_OPERATION_ID;
+            String uri = request.getRequestURI();
+            if (uri != null && isElementError(e)) {
+                if (uri.endsWith(USE_CASES_BY_OPERATIONS_PATH)) {
+                    message = BLANK_OPERATION_ID;
+                } else if (uri.endsWith(USE_CASES_BY_BI_STEP_CODES_PATH)) {
+                    message = BLANK_BI_STEP_CODE;
+                }
             }
         }
         log.error(message);
