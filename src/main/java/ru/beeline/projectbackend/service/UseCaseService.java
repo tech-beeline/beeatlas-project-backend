@@ -24,6 +24,7 @@ import ru.beeline.projectbackend.utils.InterfaceCodeGenerator;
 
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static ru.beeline.projectbackend.utils.Constant.*;
 
@@ -115,6 +116,41 @@ public class UseCaseService {
                     .useCases(useCases)
                     .build());
         }
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public List<UseCaseByBiStepCodesGroupDTO> findUseCasesByBiStepCodes(JsonNode request) {
+        List<String> uniqueCodes = validateAndDedupeBiStepCodes(request);
+        log.info("UseCase by bi-step-codes: обработка, уникальных кодов={}", uniqueCodes.size());
+
+        List<String> lowerCodes = uniqueCodes.stream()
+                .map(code -> code.toLowerCase(Locale.ROOT))
+                .distinct()
+                .toList();
+        List<UseCase> found = useCaseRepository.findLiveByBiStepCodeInIgnoreCase(lowerCodes);
+        Map<String, List<UseCase>> byLowerBiStepCode = found.stream()
+                .collect(Collectors.groupingBy(useCase -> useCase.getBiStepCode().toLowerCase(Locale.ROOT)));
+
+        List<UseCaseByBiStepCodesGroupDTO> response = new ArrayList<>(uniqueCodes.size());
+        for (String code : uniqueCodes) {
+            List<UseCase> group = byLowerBiStepCode.getOrDefault(code.toLowerCase(Locale.ROOT), List.of());
+            List<UseCaseByBiStepCodeItemDTO> useCases = group.stream()
+                    .sorted(Comparator.comparing(UseCase::getId))
+                    .map(useCase -> UseCaseByBiStepCodeItemDTO.builder()
+                            .id(useCase.getId())
+                            .name(useCase.getName())
+                            .code(useCase.getCode())
+                            .projectId(useCase.getProjectId())
+                            .build())
+                    .toList();
+            response.add(UseCaseByBiStepCodesGroupDTO.builder()
+                    .biStepCode(code)
+                    .useCases(useCases)
+                    .build());
+        }
+        log.info("UseCase by bi-step-codes: завершён, групп={}, найденных use case={}",
+                response.size(), found.size());
         return response;
     }
 
@@ -295,6 +331,33 @@ public class UseCaseService {
             }
         }
         return operationIds;
+    }
+
+    private List<String> validateAndDedupeBiStepCodes(JsonNode request) {
+        if (request == null || request.isNull() || request.isMissingNode()) {
+            throw new ValidationException(MISSING_REQUEST_BODY);
+        }
+        if (!request.isArray()) {
+            throw new ValidationException(MISSING_REQUEST_BODY);
+        }
+        if (request.isEmpty()) {
+            throw new ValidationException(EMPTY_BI_STEP_CODES);
+        }
+        List<String> codes = new ArrayList<>(request.size());
+        Set<String> unique = new LinkedHashSet<>();
+        for (JsonNode element : request) {
+            if (element == null || element.isNull() || !element.isTextual()) {
+                throw new ValidationException(BLANK_BI_STEP_CODE);
+            }
+            String trimmed = element.asText().trim();
+            if (trimmed.isEmpty()) {
+                throw new ValidationException(BLANK_BI_STEP_CODE);
+            }
+            if (unique.add(trimmed)) {
+                codes.add(trimmed);
+            }
+        }
+        return codes;
     }
 
     private String resolveBranchName(String branch) {

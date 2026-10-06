@@ -241,6 +241,60 @@ class ProjectUseCaseControllerTest {
     }
 
     @Test
+    void getUseCasesByBiStepCodes_returnsGroups() throws Exception {
+        when(useCaseRepository.findLiveByBiStepCodeInIgnoreCase(any())).thenReturn(List.of(
+                UseCase.builder().id(12).projectId(4).code("UC-ORDER")
+                        .name("Оформление заказа в другом проекте")
+                        .biStepCode("Step.00.00.02.77").build(),
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER")
+                        .name("Оформление заказа")
+                        .biStepCode("Step.00.00.02.77").build()));
+
+        mockMvc.perform(post("/api/v1/project/use-cases/by-bi-step-codes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[\"Step.00.00.02.77\",\"Step.00.00.02.84\"]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].biStepCode").value("Step.00.00.02.77"))
+                .andExpect(jsonPath("$[0].useCases[0].id").value(7))
+                .andExpect(jsonPath("$[0].useCases[0].name").value("Оформление заказа"))
+                .andExpect(jsonPath("$[0].useCases[0].code").value("UC-ORDER"))
+                .andExpect(jsonPath("$[0].useCases[0].projectId").value(1))
+                .andExpect(jsonPath("$[0].useCases[1].id").value(12))
+                .andExpect(jsonPath("$[0].useCases[1].projectId").value(4))
+                .andExpect(jsonPath("$[1].biStepCode").value("Step.00.00.02.84"))
+                .andExpect(jsonPath("$[1].useCases").isEmpty());
+    }
+
+    @Test
+    void getUseCasesByBiStepCodes_missingBody_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/by-bi-step-codes")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Отсутствует тело запроса"));
+        verifyNoInteractions(useCaseRepository);
+    }
+
+    @Test
+    void getUseCasesByBiStepCodes_emptyElement_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/by-bi-step-codes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[\"Step.A\", \"\"]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Код bi-step не может быть пустым"));
+        verifyNoInteractions(useCaseRepository);
+    }
+
+    @Test
+    void getUseCasesByBiStepCodes_numberElement_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/by-bi-step-codes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[1]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Код bi-step не может быть пустым"));
+        verifyNoInteractions(useCaseRepository);
+    }
+
+    @Test
     void getUseCaseOperations_returnsTree() throws Exception {
         when(projectRepository.findByIdAndDeleteDateIsNull(1))
                 .thenReturn(Optional.of(Project.builder().id(1).build()));

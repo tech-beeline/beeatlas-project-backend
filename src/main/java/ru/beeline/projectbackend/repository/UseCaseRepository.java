@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import ru.beeline.projectbackend.domain.UseCase;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,4 +21,9 @@ public interface UseCaseRepository extends JpaRepository<UseCase, Integer> {
     Optional<UseCase> findByIdAndProjectIdAndDeletedDateIsNull(Integer id, Integer projectId);
 
     List<UseCase> findByProjectIdAndDeletedDateIsNullOrderByIdAsc(Integer projectId);
+
+    @Query("SELECT u FROM UseCase u WHERE u.deletedDate IS NULL "
+            + "AND u.biStepCode IS NOT NULL AND TRIM(u.biStepCode) <> '' "
+            + "AND LOWER(u.biStepCode) IN :codes")
+    List<UseCase> findLiveByBiStepCodeInIgnoreCase(@Param("codes") Collection<String> codes);
 }

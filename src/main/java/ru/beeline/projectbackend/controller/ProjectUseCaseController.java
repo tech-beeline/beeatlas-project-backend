@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.projectbackend.dto.error.ErrorResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ProjectUseCaseResponseDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseByBiStepCodesGroupDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
@@ -104,5 +105,24 @@ public class ProjectUseCaseController {
     public ResponseEntity<List<OperationUseCasesResponseDTO>> getUseCasesByOperations(
             @RequestBody(required = false) JsonNode request) {
         return ResponseEntity.ok(useCaseService.findUseCasesByOperations(request));
+    }
+
+    @PostMapping("/use-cases/by-bi-step-codes")
+    @Operation(summary = "Получить use case по кодам шагов BI",
+            description = "Возвращает use case, сгруппированные по кодам шагов BI.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Группы в порядке уникальных кодов из тела",
+                    content = @Content(array = @ArraySchema(
+                            schema = @Schema(implementation = UseCaseByBiStepCodesGroupDTO.class)))),
+            @ApiResponse(responseCode = "400", description = "Неверное тело запроса",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDTO.class)))
+    })
+    public ResponseEntity<List<UseCaseByBiStepCodesGroupDTO>> getUseCasesByBiStepCodes(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+                    description = "JSON-массив кодов шагов BI",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = String.class,
+                            example = "Step.00.00.02.77"))))
+            @RequestBody(required = false) JsonNode request) {
+        return ResponseEntity.ok(useCaseService.findUseCasesByBiStepCodes(request));
     }
 }

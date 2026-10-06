@@ -32,6 +32,8 @@ import ru.beeline.projectbackend.dto.product.DiscoveredOperationUpsertDTO;
 import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ProjectUseCaseResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ReqOperationDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseByBiStepCodeItemDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseByBiStepCodesGroupDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
@@ -56,6 +58,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -493,6 +496,111 @@ class UseCaseServiceTest {
             }
         }
         return node;
+    }
+
+    private ArrayNode stringArray(String... values) {
+        ArrayNode node = JsonNodeFactory.instance.arrayNode();
+        if (values != null) {
+            for (String value : values) {
+                node.add(value);
+            }
+        }
+        return node;
+    }
+
+    @Test
+    @DisplayName("Поиск по bi-step: два use case на один код, код без связей, сортировка по id")
+    void findsUseCasesByBiStepCodes_twoOnOneCodeAndEmptyGroup() {
+        when(useCaseRepository.findLiveByBiStepCodeInIgnoreCase(anyCollection())).thenReturn(List.of(
+                UseCase.builder().id(12).projectId(4).code("UC-ORDER")
+                        .name("Оформление заказа в другом проекте")
+                        .biStepCode("Step.00.00.02.77").build(),
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER")
+                        .name("Оформление заказа")
+                        .biStepCode("Step.00.00.02.77").build()));
+
+        List<UseCaseByBiStepCodesGroupDTO> response = service.findUseCasesByBiStepCodes(
+                stringArray("Step.00.00.02.77", "Step.00.00.02.84"));
+
+        assertThat(response).hasSize(2);
+        assertThat(response.get(0).getBiStepCode()).isEqualTo("Step.00.00.02.77");
+        assertThat(response.get(0).getUseCases()).extracting(UseCaseByBiStepCodeItemDTO::getId)
+                .containsExactly(7, 12);
+        assertThat(response.get(0).getUseCases().get(0).getName()).isEqualTo("Оформление заказа");
+        assertThat(response.get(0).getUseCases().get(0).getCode()).isEqualTo("UC-ORDER");
+        assertThat(response.get(0).getUseCases().get(0).getProjectId()).isEqualTo(1);
+        assertThat(response.get(0).getUseCases().get(1).getProjectId()).isEqualTo(4);
+        assertThat(response.get(1).getBiStepCode()).isEqualTo("Step.00.00.02.84");
+        assertThat(response.get(1).getUseCases()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Поиск по bi-step: удалённая карточка не попадает — репозиторий уже отфильтровал")
+    void findsUseCasesByBiStepCodes_deletedNotReturnedByRepository() {
+        when(useCaseRepository.findLiveByBiStepCodeInIgnoreCase(anyCollection())).thenReturn(List.of(
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER")
+                        .name("Оформление заказа")
+                        .biStepCode("Step.00.00.02.77").build()));
+
+        List<UseCaseByBiStepCodesGroupDTO> response = service.findUseCasesByBiStepCodes(
+                stringArray("Step.00.00.02.77"));
+
+        assertThat(response.get(0).getUseCases()).extracting(UseCaseByBiStepCodeItemDTO::getId)
+                .containsExactly(7);
+        verify(useCaseRepository).findLiveByBiStepCodeInIgnoreCase(anyCollection());
+    }
+
+    @Test
+    @DisplayName("Поиск по bi-step: дубликаты после trim схлопываются, match без регистра")
+    void findsUseCasesByBiStepCodes_dedupesAndMatchesIgnoreCase() {
+        when(useCaseRepository.findLiveByBiStepCodeInIgnoreCase(anyCollection())).thenReturn(List.of(
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER")
+                        .name("Оформление заказа")
+                        .biStepCode("step.00.00.02.77").build()));
+
+        List<UseCaseByBiStepCodesGroupDTO> response = service.findUseCasesByBiStepCodes(
+                stringArray("  Step.00.00.02.77  ", "Step.00.00.02.77"));
+
+        assertThat(response).extracting(UseCaseByBiStepCodesGroupDTO::getBiStepCode)
+                .containsExactly("Step.00.00.02.77");
+        assertThat(response.get(0).getUseCases()).hasSize(1);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Collection<String>> codesCaptor =
+                ArgumentCaptor.forClass(java.util.Collection.class);
+        verify(useCaseRepository).findLiveByBiStepCodeInIgnoreCase(codesCaptor.capture());
+        assertThat(codesCaptor.getValue()).containsExactly("step.00.00.02.77");
+    }
+
+    @Test
+    @DisplayName("Поиск по bi-step: пустое тело и пустой элемент — 400 без запроса в БД")
+    void failsOnInvalidBiStepCodesBody() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+
+        assertThatThrownBy(() -> service.findUseCasesByBiStepCodes(null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Отсутствует тело запроса");
+        assertThatThrownBy(() -> service.findUseCasesByBiStepCodes(mapper.createObjectNode()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Отсутствует тело запроса");
+        assertThatThrownBy(() -> service.findUseCasesByBiStepCodes(stringArray()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Список кодов bi-step не может быть пустым");
+
+        ArrayNode withNull = stringArray("Step.A");
+        withNull.add(NullNode.getInstance());
+        assertThatThrownBy(() -> service.findUseCasesByBiStepCodes(withNull))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Код bi-step не может быть пустым");
+
+        assertThatThrownBy(() -> service.findUseCasesByBiStepCodes(mapper.readTree("[1]")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Код bi-step не может быть пустым");
+        assertThatThrownBy(() -> service.findUseCasesByBiStepCodes(stringArray("   ")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Код bi-step не может быть пустым");
+
+        verify(useCaseRepository, never()).findLiveByBiStepCodeInIgnoreCase(anyCollection());
     }
 
     @Test
