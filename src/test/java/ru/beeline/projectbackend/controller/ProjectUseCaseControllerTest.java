@@ -403,7 +403,9 @@ class ProjectUseCaseControllerTest {
         when(row.getRelatedReqOperationId()).thenReturn(relatedOperationId);
         when(row.getUcId()).thenReturn(ucId);
         when(row.getUcName()).thenReturn(ucName);
-        when(row.getUcCode()).thenReturn(ucCode);
+        if (ucCode != null) {
+            when(row.getUcCode()).thenReturn(ucCode);
+        }
         return row;
     }
 }
