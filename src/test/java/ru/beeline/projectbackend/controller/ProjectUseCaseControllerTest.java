@@ -241,6 +241,59 @@ class ProjectUseCaseControllerTest {
     }
 
     @Test
+    void getOperationsGroupedByUseCase_returnsGroupedResponse() throws Exception {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(null, 20, 7, "Оформление заказа", "UC-ORDER"),
+                row(20, 10, 7, "Оформление заказа", "UC-ORDER"),
+                row(20, 30, 8, "Возврат", "UC-RETURN"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any()))
+                .thenReturn(rows);
+
+        mockMvc.perform(post("/api/v1/project/use-cases/operations/grouped-by-use-case")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[20, 10, 99]"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(7))
+                .andExpect(jsonPath("$[0].name").value("Оформление заказа"))
+                .andExpect(jsonPath("$[0].code").value("UC-ORDER"))
+                .andExpect(jsonPath("$[0].operationIds[0]").value(20))
+                .andExpect(jsonPath("$[0].operationIds[1]").value(10))
+                .andExpect(jsonPath("$[1].id").value(8))
+                .andExpect(jsonPath("$[1].name").value("Возврат"))
+                .andExpect(jsonPath("$[1].code").value("UC-RETURN"))
+                .andExpect(jsonPath("$[1].operationIds[0]").value(20))
+                .andExpect(jsonPath("$[0].description").doesNotExist())
+                .andExpect(jsonPath("$[0].projectBranchId").doesNotExist());
+    }
+
+    @Test
+    void getOperationsGroupedByUseCase_missingBody_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/operations/grouped-by-use-case")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Отсутствует тело запроса"));
+    }
+
+    @Test
+    void getOperationsGroupedByUseCase_emptyArray_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/operations/grouped-by-use-case")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Список идентификаторов методов не может быть пустым"));
+    }
+
+    @Test
+    void getOperationsGroupedByUseCase_nullElement_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/project/use-cases/operations/grouped-by-use-case")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("[20, null]"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorMessage").value("Идентификатор метода не может быть пустым"));
+    }
+
+    @Test
     void getUseCasesByBiStepCodes_returnsGroups() throws Exception {
         when(useCaseRepository.findLiveByBiStepCodeInIgnoreCase(any())).thenReturn(List.of(
                 UseCase.builder().id(12).projectId(4).code("UC-ORDER")
@@ -340,11 +393,17 @@ class ProjectUseCaseControllerTest {
 
     private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
                                              Integer ucId, String ucName) {
+        return row(reqOperationId, relatedOperationId, ucId, ucName, null);
+    }
+
+    private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
+                                             Integer ucId, String ucName, String ucCode) {
         UseCaseByOperationProjection row = mock(UseCaseByOperationProjection.class);
         when(row.getReqOperationId()).thenReturn(reqOperationId);
         when(row.getRelatedReqOperationId()).thenReturn(relatedOperationId);
         when(row.getUcId()).thenReturn(ucId);
         when(row.getUcName()).thenReturn(ucName);
+        when(row.getUcCode()).thenReturn(ucCode);
         return row;
     }
 }

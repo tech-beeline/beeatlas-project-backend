@@ -21,7 +21,7 @@ public interface UsOperationRelationRepository extends JpaRepository<UsOperation
     List<UsOperationRelation> findAllByUseCaseBranchId(Integer useCaseBranchId);
 
     @Query("SELECT r.reqOperationId AS reqOperationId, r.relatedReqOperationId AS relatedReqOperationId, "
-            + "u.id AS ucId, u.name AS ucName "
+            + "u.id AS ucId, u.name AS ucName, u.code AS ucCode "
             + "FROM UsOperationRelation r, ArtifactBranch b, UseCase u "
             + "WHERE r.useCaseBranchId = b.id "
             + "AND b.artifactType = 'use_case' "

@@ -38,6 +38,8 @@ import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 public class CustomExceptionHandler {
 
     private static final String USE_CASES_BY_OPERATIONS_PATH = "/use-cases/by-operations";
+    private static final String USE_CASES_OPERATIONS_GROUPED_BY_USE_CASE_PATH =
+            "/use-cases/operations/grouped-by-use-case";
     private static final String USE_CASES_BY_BI_STEP_CODES_PATH = "/use-cases/by-bi-step-codes";
 
     private static ResponseEntity<Object> errorResponse(HttpStatus status, String message) {
@@ -55,7 +57,8 @@ public class CustomExceptionHandler {
             message = MISSING_REQUEST_BODY;
             String uri = request.getRequestURI();
             if (uri != null && isElementError(e)) {
-                if (uri.endsWith(USE_CASES_BY_OPERATIONS_PATH)) {
+                if (uri.endsWith(USE_CASES_BY_OPERATIONS_PATH)
+                        || uri.endsWith(USE_CASES_OPERATIONS_GROUPED_BY_USE_CASE_PATH)) {
                     message = BLANK_OPERATION_ID;
                 } else if (uri.endsWith(USE_CASES_BY_BI_STEP_CODES_PATH)) {
                     message = BLANK_BI_STEP_CODE;

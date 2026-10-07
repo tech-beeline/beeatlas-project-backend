@@ -120,6 +120,49 @@ public class UseCaseService {
     }
 
     @Transactional(readOnly = true)
+    public List<UseCaseOperationsGroupedDTO> findOperationsGroupedByUseCase(JsonNode request) {
+        List<Integer> operationIds = validateAndDedupe(request);
+        log.info("UseCase operations grouped by use case: обработка, методов={}", operationIds.size());
+
+        List<UseCaseByOperationProjection> rows =
+                usOperationRelationRepository.findUseCasesByOperationIds(operationIds);
+
+        Set<Integer> requested = new HashSet<>(operationIds);
+        Map<Integer, Set<Integer>> operationIdsByUc = new TreeMap<>();
+        Map<Integer, String> nameByUcId = new HashMap<>();
+        Map<Integer, String> codeByUcId = new HashMap<>();
+        for (UseCaseByOperationProjection row : rows) {
+            if (row.getUcId() == null) {
+                continue;
+            }
+            nameByUcId.put(row.getUcId(), row.getUcName());
+            codeByUcId.put(row.getUcId(), row.getUcCode());
+            collectOperation(operationIdsByUc, requested, row.getReqOperationId(), row.getUcId());
+            collectOperation(operationIdsByUc, requested, row.getRelatedReqOperationId(), row.getUcId());
+        }
+
+        List<UseCaseOperationsGroupedDTO> response = new ArrayList<>(operationIdsByUc.size());
+        for (Map.Entry<Integer, Set<Integer>> entry : operationIdsByUc.entrySet()) {
+            Integer ucId = entry.getKey();
+            Set<Integer> matched = entry.getValue();
+            List<Integer> orderedOperationIds = operationIds.stream()
+                    .filter(matched::contains)
+                    .toList();
+            if (orderedOperationIds.isEmpty()) {
+                continue;
+            }
+            response.add(UseCaseOperationsGroupedDTO.builder()
+                    .id(ucId)
+                    .name(nameByUcId.get(ucId))
+                    .code(codeByUcId.get(ucId))
+                    .operationIds(orderedOperationIds)
+                    .build());
+        }
+        log.info("UseCase operations grouped by use case: завершён, карточек={}", response.size());
+        return response;
+    }
+
+    @Transactional(readOnly = true)
     public List<UseCaseByBiStepCodesGroupDTO> findUseCasesByBiStepCodes(JsonNode request) {
         List<String> uniqueCodes = validateAndDedupeBiStepCodes(request);
         log.info("UseCase by bi-step-codes: обработка, уникальных кодов={}", uniqueCodes.size());
@@ -323,6 +366,13 @@ public class UseCaseService {
                                 Integer operationId, Integer ucId) {
         if (operationId != null && requested.contains(operationId)) {
             ucIdsByOperation.computeIfAbsent(operationId, ignored -> new TreeSet<>()).add(ucId);
+        }
+    }
+
+    private void collectOperation(Map<Integer, Set<Integer>> operationIdsByUc, Set<Integer> requested,
+                                  Integer operationId, Integer ucId) {
+        if (operationId != null && requested.contains(operationId)) {
+            operationIdsByUc.computeIfAbsent(ucId, ignored -> new HashSet<>()).add(operationId);
         }
     }
 

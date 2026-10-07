@@ -38,6 +38,7 @@ import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCatalogItemDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseOperationsGroupedDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
 import ru.beeline.projectbackend.exception.ExternalServiceException;
@@ -705,6 +706,110 @@ class UseCaseServiceTest {
     }
 
     @Test
+    @DisplayName("Группировка по use case: один метод в двух карточках")
+    void groupsOperationsByUseCase_oneMethodInTwoCards() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(null, 20, 7, "Оформление заказа", "UC-ORDER"),
+                row(20, 30, 8, "Возврат", "UC-RETURN"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any())).thenReturn(rows);
+
+        List<UseCaseOperationsGroupedDTO> response =
+                service.findOperationsGroupedByUseCase(array(20));
+
+        assertThat(response).extracting(UseCaseOperationsGroupedDTO::getId).containsExactly(7, 8);
+        assertThat(response.get(0).getName()).isEqualTo("Оформление заказа");
+        assertThat(response.get(0).getCode()).isEqualTo("UC-ORDER");
+        assertThat(response.get(0).getOperationIds()).containsExactly(20);
+        assertThat(response.get(1).getName()).isEqualTo("Возврат");
+        assertThat(response.get(1).getCode()).isEqualTo("UC-RETURN");
+        assertThat(response.get(1).getOperationIds()).containsExactly(20);
+    }
+
+    @Test
+    @DisplayName("Группировка по use case: два метода в одной карточке, порядок operationIds — первое вхождение в теле")
+    void groupsOperationsByUseCase_twoMethodsInOneCard_orderFromBody() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(null, 10, 7, "Оформление заказа", "UC-ORDER"),
+                row(20, 30, 7, "Оформление заказа", "UC-ORDER"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any())).thenReturn(rows);
+
+        List<UseCaseOperationsGroupedDTO> response =
+                service.findOperationsGroupedByUseCase(array(20, 10, 20));
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).getId()).isEqualTo(7);
+        assertThat(response.get(0).getOperationIds()).containsExactly(20, 10);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Integer>> captor = ArgumentCaptor.forClass(List.class);
+        verify(usOperationRelationRepository).findUseCasesByOperationIds(captor.capture());
+        assertThat(captor.getValue()).containsExactly(20, 10);
+    }
+
+    @Test
+    @DisplayName("Группировка по use case: метод на обеих сторонах шага — один раз в operationIds")
+    void groupsOperationsByUseCase_methodOnBothSidesOnce() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(20, 20, 7, "Оформление заказа", "UC-ORDER"),
+                row(null, 20, 7, "Оформление заказа", "UC-ORDER"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any())).thenReturn(rows);
+
+        List<UseCaseOperationsGroupedDTO> response =
+                service.findOperationsGroupedByUseCase(array(20));
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).getOperationIds()).containsExactly(20);
+    }
+
+    @Test
+    @DisplayName("Группировка по use case: id без шагов не попадает в ответ; чужой метод карточки не в operationIds")
+    void groupsOperationsByUseCase_idWithoutStepsAndForeignMethodExcluded() {
+        List<UseCaseByOperationProjection> rows = List.of(
+                row(null, 20, 7, "Оформление заказа", "UC-ORDER"),
+                row(20, 500, 7, "Оформление заказа", "UC-ORDER"));
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any())).thenReturn(rows);
+
+        List<UseCaseOperationsGroupedDTO> response =
+                service.findOperationsGroupedByUseCase(array(20, 99));
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).getId()).isEqualTo(7);
+        assertThat(response.get(0).getOperationIds()).containsExactly(20);
+        assertThat(response.get(0).getOperationIds()).doesNotContain(99, 500);
+    }
+
+    @Test
+    @DisplayName("Группировка по use case: ни одного совпадения — пустой массив")
+    void groupsOperationsByUseCase_noMatches_returnsEmpty() {
+        when(usOperationRelationRepository.findUseCasesByOperationIds(any())).thenReturn(List.of());
+
+        List<UseCaseOperationsGroupedDTO> response =
+                service.findOperationsGroupedByUseCase(array(99));
+
+        assertThat(response).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Группировка по use case: пустое тело и пустой элемент — 400 без запроса в БД")
+    void groupsOperationsByUseCase_failsOnInvalidBody() {
+        assertThatThrownBy(() -> service.findOperationsGroupedByUseCase(null))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Отсутствует тело запроса");
+
+        assertThatThrownBy(() -> service.findOperationsGroupedByUseCase(array()))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Список идентификаторов методов не может быть пустым");
+
+        ArrayNode withNull = array(20);
+        withNull.add(NullNode.getInstance());
+        assertThatThrownBy(() -> service.findOperationsGroupedByUseCase(withNull))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("Идентификатор метода не может быть пустым");
+
+        verify(usOperationRelationRepository, never()).findUseCasesByOperationIds(any());
+    }
+
+    @Test
     @DisplayName("Карточка с ветками: сортировка по name, затем по id; пустые biStepCode и updatedDate — null")
     void getCard_returnsBranchesSortedAndNullsBlankBiStepCodeAndUpdatedDate() {
         LocalDateTime created = LocalDateTime.of(2026, 9, 30, 12, 0, 0);
@@ -966,11 +1071,19 @@ class UseCaseServiceTest {
 
     private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
                                              Integer ucId, String ucName) {
+        return row(reqOperationId, relatedOperationId, ucId, ucName, null);
+    }
+
+    private UseCaseByOperationProjection row(Integer reqOperationId, Integer relatedOperationId,
+                                             Integer ucId, String ucName, String ucCode) {
         UseCaseByOperationProjection row = mock(UseCaseByOperationProjection.class);
         when(row.getReqOperationId()).thenReturn(reqOperationId);
         when(row.getRelatedReqOperationId()).thenReturn(relatedOperationId);
         when(row.getUcId()).thenReturn(ucId);
         when(row.getUcName()).thenReturn(ucName);
+        if (ucCode != null) {
+            when(row.getUcCode()).thenReturn(ucCode);
+        }
         return row;
     }
 

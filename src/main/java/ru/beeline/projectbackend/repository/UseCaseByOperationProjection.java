@@ -12,4 +12,6 @@ public interface UseCaseByOperationProjection {
     Integer getUcId();
 
     String getUcName();
+
+    String getUcCode();
 }

@@ -29,6 +29,7 @@ import ru.beeline.projectbackend.dto.usecase.OperationUseCasesResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.ProjectUseCaseResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseByBiStepCodesGroupDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseOperationsGroupedDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
 import ru.beeline.projectbackend.service.UseCaseService;
@@ -105,6 +106,30 @@ public class ProjectUseCaseController {
     public ResponseEntity<List<OperationUseCasesResponseDTO>> getUseCasesByOperations(
             @RequestBody(required = false) JsonNode request) {
         return ResponseEntity.ok(useCaseService.findUseCasesByOperations(request));
+    }
+
+    @PostMapping("/use-cases/operations/grouped-by-use-case")
+    @Operation(summary = "Найти use case по списку методов",
+            description = "По списку discovered_operation.id возвращает карточки use case, в шагах которых "
+                    + "есть хотя бы один переданный метод. Для каждой карточки — id, name, code и список "
+                    + "operationIds: только те id из запроса, которые реально участвуют в её шагах. "
+                    + "Тело — JSON-массив целых чисел без обёртки. Дубликаты схлопываются, порядок — "
+                    + "первое вхождение. Карточки отсортированы по id. Методов без совпадений в ответе нет; "
+                    + "если совпадений нет совсем — пустой массив.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Карточки use case с operationIds из тела",
+                    content = @Content(array = @ArraySchema(
+                            schema = @Schema(implementation = UseCaseOperationsGroupedDTO.class)))),
+            @ApiResponse(responseCode = "400", description = "Неверное тело запроса",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDTO.class)))
+    })
+    public ResponseEntity<List<UseCaseOperationsGroupedDTO>> getOperationsGroupedByUseCase(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+                    description = "JSON-массив целых discovered_operation.id",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = Integer.class,
+                            example = "20"))))
+            @RequestBody(required = false) JsonNode request) {
+        return ResponseEntity.ok(useCaseService.findOperationsGroupedByUseCase(request));
     }
 
     @PostMapping("/use-cases/by-bi-step-codes")
