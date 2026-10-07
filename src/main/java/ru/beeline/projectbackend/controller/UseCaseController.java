@@ -5,6 +5,7 @@ package ru.beeline.projectbackend.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -20,7 +21,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.beeline.projectbackend.dto.error.ErrorResponseDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseCatalogItemDTO;
 import ru.beeline.projectbackend.service.UseCaseService;
+
+import java.util.List;
 
 import static ru.beeline.projectbackend.utils.Constant.ID_MUST_BE_POSITIVE;
 
@@ -32,6 +36,20 @@ import static ru.beeline.projectbackend.utils.Constant.ID_MUST_BE_POSITIVE;
 public class UseCaseController {
 
     private final UseCaseService useCaseService;
+
+    @GetMapping
+    @Operation(summary = "Получить все живые use case",
+            description = "Возвращает карточки сценариев с пустым deleted_date и кодом шага BI (biStepCode). "
+                    + "Один код может быть у нескольких use case — без группировки. "
+                    + "Ветки и шаги не возвращаются. Если живых карточек нет — пустой массив.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Живые use case",
+                    content = @Content(array = @ArraySchema(
+                            schema = @Schema(implementation = UseCaseCatalogItemDTO.class))))
+    })
+    public ResponseEntity<List<UseCaseCatalogItemDTO>> getAllLiveUseCases() {
+        return ResponseEntity.ok(useCaseService.getAllLiveUseCases());
+    }
 
     @GetMapping("/{useCaseId}")
     @Operation(summary = "Получить карточку use case и список её веток",

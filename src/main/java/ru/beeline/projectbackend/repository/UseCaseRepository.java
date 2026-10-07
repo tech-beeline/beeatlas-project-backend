@@ -22,6 +22,8 @@ public interface UseCaseRepository extends JpaRepository<UseCase, Integer> {
 
     List<UseCase> findByProjectIdAndDeletedDateIsNullOrderByIdAsc(Integer projectId);
 
+    List<UseCase> findByDeletedDateIsNullOrderByIdAsc();
+
     @Query("SELECT u FROM UseCase u WHERE u.deletedDate IS NULL "
             + "AND u.biStepCode IS NOT NULL AND TRIM(u.biStepCode) <> '' "
             + "AND LOWER(u.biStepCode) IN :codes")

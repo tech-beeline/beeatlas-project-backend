@@ -61,6 +61,50 @@ class UseCaseControllerTest {
     }
 
     @Test
+    void getAllLiveUseCases_returnsFlatCatalogWithBiStepCode() throws Exception {
+        when(useCaseRepository.findByDeletedDateIsNullOrderByIdAsc()).thenReturn(List.of(
+                UseCase.builder().id(12).projectId(4).code("UC-ORDER")
+                        .name("Оформление заказа в другом проекте")
+                        .biStepCode("Step.00.00.02.77").build(),
+                UseCase.builder().id(8).projectId(1).code("UC-DRAFT")
+                        .name("Черновик").description(null).biStepCode(null).build(),
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER")
+                        .name("Оформление заказа").description("Клиент оформляет заказ")
+                        .biStepCode("Step.00.00.02.77").build()));
+
+        mockMvc.perform(get("/api/v1/use-case"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
+                .andExpect(jsonPath("$[0].id").value(7))
+                .andExpect(jsonPath("$[0].code").value("UC-ORDER"))
+                .andExpect(jsonPath("$[0].name").value("Оформление заказа"))
+                .andExpect(jsonPath("$[0].description").value("Клиент оформляет заказ"))
+                .andExpect(jsonPath("$[0].projectId").value(1))
+                .andExpect(jsonPath("$[0].biStepCode").value("Step.00.00.02.77"))
+                .andExpect(jsonPath("$[0].createdDate").doesNotExist())
+                .andExpect(jsonPath("$[0].updatedDate").doesNotExist())
+                .andExpect(jsonPath("$[0].deletedDate").doesNotExist())
+                .andExpect(jsonPath("$[0].branches").doesNotExist())
+                .andExpect(jsonPath("$[1].id").value(8))
+                .andExpect(jsonPath("$[1].description").value(nullValue()))
+                .andExpect(jsonPath("$[1].biStepCode").value(nullValue()))
+                .andExpect(jsonPath("$[2].id").value(12))
+                .andExpect(jsonPath("$[2].projectId").value(4))
+                .andExpect(jsonPath("$[2].biStepCode").value("Step.00.00.02.77"));
+        verifyNoInteractions(projectRepository, artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    void getAllLiveUseCases_empty_returnsEmptyArray() throws Exception {
+        when(useCaseRepository.findByDeletedDateIsNullOrderByIdAsc()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/use-case"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+        verifyNoInteractions(projectRepository, artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
     void getUseCase_returnsCardWithBranches() throws Exception {
         when(useCaseRepository.findById(7)).thenReturn(Optional.of(UseCase.builder()
                 .id(7)

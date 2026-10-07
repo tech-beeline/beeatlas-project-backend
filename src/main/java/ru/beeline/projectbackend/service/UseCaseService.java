@@ -210,6 +210,26 @@ public class UseCaseService {
     }
 
     @Transactional(readOnly = true)
+    public List<UseCaseCatalogItemDTO> getAllLiveUseCases() {
+        log.info("UseCase catalog: обработка");
+        List<UseCaseCatalogItemDTO> result = useCaseRepository.findByDeletedDateIsNullOrderByIdAsc()
+                .stream()
+                .filter(useCase -> useCase.getDeletedDate() == null)
+                .sorted(Comparator.comparing(UseCase::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(useCase -> UseCaseCatalogItemDTO.builder()
+                        .id(useCase.getId())
+                        .code(useCase.getCode())
+                        .name(useCase.getName())
+                        .description(useCase.getDescription())
+                        .projectId(useCase.getProjectId())
+                        .biStepCode(trimToNull(useCase.getBiStepCode()))
+                        .build())
+                .toList();
+        log.info("UseCase catalog: завершён, карточек={}", result.size());
+        return result;
+    }
+
+    @Transactional(readOnly = true)
     public List<UseCaseOperationNodeDTO> getOperationsTree(Integer projectId, Integer useCaseId, String branch) {
         String branchName = resolveBranchName(branch);
         log.info("UseCase operations tree: обработка, projectId={}, useCaseId={}, branch={}",

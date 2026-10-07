@@ -36,6 +36,7 @@ import ru.beeline.projectbackend.dto.usecase.UseCaseByBiStepCodeItemDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseByBiStepCodesGroupDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCallDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseCardResponseDTO;
+import ru.beeline.projectbackend.dto.usecase.UseCaseCatalogItemDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseInfoDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertRequestDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseUpsertResponseDTO;
@@ -793,6 +794,62 @@ class UseCaseServiceTest {
                 .hasMessage("Use case не найден");
         verify(artifactBranchRepository, never()).findByArtifactTypeAndArtifactId(anyString(), anyInt());
         verifyNoInteractions(productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Каталог: все живые use case по возрастанию id, без группировки по biStepCode")
+    void getAllLiveUseCases_returnsFlatCatalogOrderedById() {
+        when(useCaseRepository.findByDeletedDateIsNullOrderByIdAsc()).thenReturn(List.of(
+                UseCase.builder().id(12).projectId(4).code("UC-ORDER")
+                        .name("Оформление заказа в другом проекте")
+                        .biStepCode("Step.00.00.02.77").build(),
+                UseCase.builder().id(8).projectId(1).code("UC-DRAFT")
+                        .name("Черновик").description(null).biStepCode(null).build(),
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER")
+                        .name("Оформление заказа").description("Клиент оформляет заказ")
+                        .biStepCode("Step.00.00.02.77").build()));
+
+        List<UseCaseCatalogItemDTO> result = service.getAllLiveUseCases();
+
+        assertThat(result).extracting(UseCaseCatalogItemDTO::getId).containsExactly(7, 8, 12);
+        assertThat(result.get(0).getCode()).isEqualTo("UC-ORDER");
+        assertThat(result.get(0).getName()).isEqualTo("Оформление заказа");
+        assertThat(result.get(0).getDescription()).isEqualTo("Клиент оформляет заказ");
+        assertThat(result.get(0).getProjectId()).isEqualTo(1);
+        assertThat(result.get(0).getBiStepCode()).isEqualTo("Step.00.00.02.77");
+        assertThat(result.get(1).getCode()).isEqualTo("UC-DRAFT");
+        assertThat(result.get(1).getDescription()).isNull();
+        assertThat(result.get(1).getBiStepCode()).isNull();
+        assertThat(result.get(2).getProjectId()).isEqualTo(4);
+        assertThat(result.get(2).getBiStepCode()).isEqualTo("Step.00.00.02.77");
+        verifyNoInteractions(projectRepository, artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Каталог: пустой или blank biStepCode — null; deleted_date не попадает")
+    void getAllLiveUseCases_nullBiStepCodeAndExcludesDeleted() {
+        UseCase deleted = UseCase.builder().id(9).projectId(1).code("UC-OLD")
+                .name("Удалённый").biStepCode("Step.X")
+                .deletedDate(LocalDateTime.of(2026, 10, 1, 8, 0, 0)).build();
+        when(useCaseRepository.findByDeletedDateIsNullOrderByIdAsc()).thenReturn(List.of(
+                UseCase.builder().id(7).projectId(1).code("UC-ORDER")
+                        .name("Оформление заказа").biStepCode("   ").build(),
+                deleted));
+
+        List<UseCaseCatalogItemDTO> result = service.getAllLiveUseCases();
+
+        assertThat(result).extracting(UseCaseCatalogItemDTO::getId).containsExactly(7);
+        assertThat(result.get(0).getBiStepCode()).isNull();
+        verifyNoInteractions(projectRepository, artifactBranchRepository, productClient, usOperationRelationRepository);
+    }
+
+    @Test
+    @DisplayName("Каталог: живых карточек нет — пустой список")
+    void getAllLiveUseCases_returnsEmptyList() {
+        when(useCaseRepository.findByDeletedDateIsNullOrderByIdAsc()).thenReturn(List.of());
+
+        assertThat(service.getAllLiveUseCases()).isEmpty();
+        verifyNoInteractions(projectRepository, artifactBranchRepository, productClient, usOperationRelationRepository);
     }
 
     @Test
