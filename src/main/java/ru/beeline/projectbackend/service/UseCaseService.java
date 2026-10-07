@@ -344,7 +344,7 @@ public class UseCaseService {
             throw new ValidationException(EMPTY_BI_STEP_CODES);
         }
         List<String> codes = new ArrayList<>(request.size());
-        Set<String> unique = new LinkedHashSet<>();
+        Set<String> uniqueLower = new LinkedHashSet<>();
         for (JsonNode element : request) {
             if (element == null || element.isNull() || !element.isTextual()) {
                 throw new ValidationException(BLANK_BI_STEP_CODE);
@@ -353,7 +353,7 @@ public class UseCaseService {
             if (trimmed.isEmpty()) {
                 throw new ValidationException(BLANK_BI_STEP_CODE);
             }
-            if (unique.add(trimmed)) {
+            if (uniqueLower.add(trimmed.toLowerCase(Locale.ROOT))) {
                 codes.add(trimmed);
             }
         }

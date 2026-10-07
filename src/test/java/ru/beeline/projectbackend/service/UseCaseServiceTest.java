@@ -551,7 +551,7 @@ class UseCaseServiceTest {
     }
 
     @Test
-    @DisplayName("Поиск по bi-step: дубликаты после trim схлопываются, match без регистра")
+    @DisplayName("Поиск по bi-step: дубликаты после trim и по регистру схлопываются, biStepCode — первое вхождение")
     void findsUseCasesByBiStepCodes_dedupesAndMatchesIgnoreCase() {
         when(useCaseRepository.findLiveByBiStepCodeInIgnoreCase(anyCollection())).thenReturn(List.of(
                 UseCase.builder().id(7).projectId(1).code("UC-ORDER")
@@ -559,7 +559,7 @@ class UseCaseServiceTest {
                         .biStepCode("step.00.00.02.77").build()));
 
         List<UseCaseByBiStepCodesGroupDTO> response = service.findUseCasesByBiStepCodes(
-                stringArray("  Step.00.00.02.77  ", "Step.00.00.02.77"));
+                stringArray("  Step.00.00.02.77  ", "step.00.00.02.77", "Step.00.00.02.77"));
 
         assertThat(response).extracting(UseCaseByBiStepCodesGroupDTO::getBiStepCode)
                 .containsExactly("Step.00.00.02.77");
