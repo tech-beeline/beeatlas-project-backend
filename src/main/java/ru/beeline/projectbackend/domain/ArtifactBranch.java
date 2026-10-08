@@ -15,8 +15,6 @@ import lombok.*;
 @AllArgsConstructor
 public class ArtifactBranch {
 
-    public static final String TYPE_PROJECT = "project";
-
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "artifact_branch_id_seq")
     @SequenceGenerator(name = "artifact_branch_id_seq", sequenceName = "projects.artifact_branch_id_seq",

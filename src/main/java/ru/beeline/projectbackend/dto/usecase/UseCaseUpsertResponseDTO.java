@@ -22,6 +22,12 @@ public class UseCaseUpsertResponseDTO {
     @Schema(description = "Код use case")
     private String code;
 
-    @Schema(description = "Идентификатор ветки проекта, в которой сохранён use case")
-    private Integer projectBranchId;
+    @Schema(description = "Идентификатор проекта")
+    private Integer projectId;
+
+    @Schema(description = "Идентификатор ветки use case (projects.artifact_branch.id)")
+    private Integer useCaseBranchId;
+
+    @Schema(description = "Имя ветки use case")
+    private String branch;
 }

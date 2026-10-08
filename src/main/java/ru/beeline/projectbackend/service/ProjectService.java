@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.beeline.projectbackend.client.UserClient;
-import ru.beeline.projectbackend.domain.ArtifactBranch;
 import ru.beeline.projectbackend.domain.Assessment;
 import ru.beeline.projectbackend.domain.AssessmentStatusEnum;
 import ru.beeline.projectbackend.domain.Project;
@@ -21,7 +20,6 @@ import ru.beeline.projectbackend.dto.ProjectUserResponseDTO;
 import ru.beeline.projectbackend.dto.UserProfileShortDTO;
 import ru.beeline.projectbackend.exception.ConflictException;
 import ru.beeline.projectbackend.exception.NotFoundException;
-import ru.beeline.projectbackend.repository.ArtifactBranchRepository;
 import ru.beeline.projectbackend.repository.AssessmentRepository;
 import ru.beeline.projectbackend.repository.AssessmentStatusEnumRepository;
 import ru.beeline.projectbackend.repository.ProjectRepository;
@@ -44,11 +42,9 @@ public class ProjectService {
     private static final String STATUS_BACKLOG = "Backlog";
     private static final String STATUS_DONE = "Done";
     private static final String TEMPORARY_UNIQUE_IDENT = "temporary";
-    private static final String DEFAULT_BRANCH = "main";
 
     private final ProjectRepository projectRepository;
     private final ProjectUserRepository projectUserRepository;
-    private final ArtifactBranchRepository artifactBranchRepository;
     private final ProjectStatusEnumRepository projectStatusEnumRepository;
     private final AssessmentRepository assessmentRepository;
     private final AssessmentStatusEnumRepository assessmentStatusEnumRepository;
@@ -74,13 +70,6 @@ public class ProjectService {
                 .build();
         project = projectRepository.save(project);
         project.setUniqueIdent(toUniqueIdent(project.getId()));
-
-        artifactBranchRepository.save(ArtifactBranch.builder()
-                .artifactType(ArtifactBranch.TYPE_PROJECT)
-                .artifactId(project.getId())
-                .name(DEFAULT_BRANCH)
-                .build());
-
         return toResponse(project);
     }
 

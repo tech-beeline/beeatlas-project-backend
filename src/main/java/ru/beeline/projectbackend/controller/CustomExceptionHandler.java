@@ -3,11 +3,14 @@
  */
 package ru.beeline.projectbackend.controller;
 
-import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -25,16 +28,62 @@ import ru.beeline.projectbackend.exception.NotFoundException;
 import ru.beeline.projectbackend.exception.S3Exception;
 import ru.beeline.projectbackend.exception.ValidationException;
 
+import static ru.beeline.projectbackend.utils.Constant.BLANK_BI_STEP_CODE;
+import static ru.beeline.projectbackend.utils.Constant.BLANK_OPERATION_ID;
+import static ru.beeline.projectbackend.utils.Constant.CONNECTION_OPERATION_ID_MUST_BE_INTEGER;
+import static ru.beeline.projectbackend.utils.Constant.MISSING_REQUEST_BODY;
 
 @ControllerAdvice
 @Slf4j
 public class CustomExceptionHandler {
+
+    private static final String USE_CASES_BY_OPERATIONS_PATH = "/use-cases/by-operations";
+    private static final String USE_CASES_OPERATIONS_GROUPED_BY_USE_CASE_PATH =
+            "/use-cases/operations/grouped-by-use-case";
+    private static final String USE_CASES_BY_BI_STEP_CODES_PATH = "/use-cases/by-bi-step-codes";
 
     private static ResponseEntity<Object> errorResponse(HttpStatus status, String message) {
         return ResponseEntity
                 .status(status)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(new ErrorResponseDTO(message));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Object> handleUnreadableBody(HttpMessageNotReadableException e,
+                                                       HttpServletRequest request) {
+        String message = connectionOperationIdError(e);
+        if (message == null) {
+            message = MISSING_REQUEST_BODY;
+            String uri = request.getRequestURI();
+            if (uri != null && isElementError(e)) {
+                if (uri.endsWith(USE_CASES_BY_OPERATIONS_PATH)
+                        || uri.endsWith(USE_CASES_OPERATIONS_GROUPED_BY_USE_CASE_PATH)) {
+                    message = BLANK_OPERATION_ID;
+                } else if (uri.endsWith(USE_CASES_BY_BI_STEP_CODES_PATH)) {
+                    message = BLANK_BI_STEP_CODE;
+                }
+            }
+        }
+        log.error(message);
+        return errorResponse(HttpStatus.BAD_REQUEST, message);
+    }
+
+    private String connectionOperationIdError(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof JsonMappingException mapping
+                    && CONNECTION_OPERATION_ID_MUST_BE_INTEGER.equals(mapping.getOriginalMessage())) {
+                return CONNECTION_OPERATION_ID_MUST_BE_INTEGER;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    private boolean isElementError(HttpMessageNotReadableException e) {
+        Throwable cause = e.getCause();
+        return cause instanceof JsonMappingException mappingException && !mappingException.getPath().isEmpty();
     }
 
     @ExceptionHandler(ConflictException.class)
