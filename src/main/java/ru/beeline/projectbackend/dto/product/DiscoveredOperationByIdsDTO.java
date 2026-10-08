@@ -17,7 +17,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
-@Schema(description = "Строка product.discovered_operation со вложенным интерфейсом и канонической операцией")
+@Schema(description = "Строка product.discovered_operation со вложенным discoveredInterface и канонической operation "
+        + "(id, name, type, tcId, techCapability, sla, interface/container)")
 public class DiscoveredOperationByIdsDTO {
 
     private Integer id;

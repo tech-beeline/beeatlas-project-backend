@@ -17,7 +17,8 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Узел дерева вызовов ветки use case (шаг us_operation_relation)")
+@Schema(description = "Узел дерева вызовов ветки use case (шаг us_operation_relation). "
+        + "discoveredOperation — элемент POST /api/v1/discovered-operation/by-ids целиком")
 public class UseCaseOperationNodeDTO {
 
     private Integer order;

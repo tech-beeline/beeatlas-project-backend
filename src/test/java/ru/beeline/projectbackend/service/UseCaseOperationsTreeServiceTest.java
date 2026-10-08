@@ -19,9 +19,14 @@ import ru.beeline.projectbackend.domain.ArtifactBranch;
 import ru.beeline.projectbackend.domain.Project;
 import ru.beeline.projectbackend.domain.UsOperationRelation;
 import ru.beeline.projectbackend.domain.UseCase;
+import ru.beeline.projectbackend.dto.product.ConnectedContainerDTO;
+import ru.beeline.projectbackend.dto.product.ConnectedInterfaceDTO;
+import ru.beeline.projectbackend.dto.product.ConnectedOperationSlaDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredInterfaceByIdsDTO;
 import ru.beeline.projectbackend.dto.product.DiscoveredOperationByIdsDTO;
+import ru.beeline.projectbackend.dto.product.OperationWithTechCapabilityDTO;
 import ru.beeline.projectbackend.dto.product.ProductDTO;
+import ru.beeline.projectbackend.dto.product.TcDTO;
 import ru.beeline.projectbackend.dto.usecase.UseCaseOperationNodeDTO;
 import ru.beeline.projectbackend.exception.ExternalServiceException;
 import ru.beeline.projectbackend.exception.NotFoundException;
@@ -147,6 +152,117 @@ class UseCaseOperationsTreeServiceTest {
                 .isEqualTo(product);
         verify(productClient).getDiscoveredOperationsByIds(List.of(20));
         verify(productClient, never()).upsertUseCaseOperations(any(), any());
+    }
+
+    @Test
+    @DisplayName("Узел сохраняет techCapability, sla, interface и container из ответа продуктов")
+    void keepsTechCapabilitySlaInterfaceAndContainerOnNode() {
+        TcDTO techCapability = TcDTO.builder()
+                .id(3)
+                .code("TC.01")
+                .name("Оформление заказа")
+                .build();
+        ConnectedOperationSlaDTO sla = ConnectedOperationSlaDTO.builder()
+                .id(15)
+                .operationId(100)
+                .rps(100.0)
+                .latency(50.0)
+                .errorRate(0.1)
+                .build();
+        ConnectedContainerDTO container = ConnectedContainerDTO.builder()
+                .id(4)
+                .code("orders-api")
+                .build();
+        ConnectedInterfaceDTO connectedInterface = ConnectedInterfaceDTO.builder()
+                .id(8)
+                .code("orders-rest")
+                .container(container)
+                .build();
+        OperationWithTechCapabilityDTO operation = OperationWithTechCapabilityDTO.builder()
+                .id(100)
+                .name("createOrder")
+                .type("POST")
+                .tcId(3)
+                .techCapability(techCapability)
+                .sla(sla)
+                .connectedInterface(connectedInterface)
+                .build();
+        ProductDTO product = ProductDTO.builder()
+                .id(3)
+                .alias("MYAPP")
+                .name("Заказы")
+                .description("Продукт заказов")
+                .build();
+        DiscoveredOperationByIdsDTO fromProducts = DiscoveredOperationByIdsDTO.builder()
+                .id(20)
+                .name("createOrder")
+                .type("POST")
+                .isPlanned(false)
+                .discoveredInterface(DiscoveredInterfaceByIdsDTO.builder()
+                        .id(5)
+                        .name("orders-api")
+                        .productId(3)
+                        .product(product)
+                        .build())
+                .operation(operation)
+                .build();
+        when(usOperationRelationRepository.findAllByUseCaseBranchId(BRANCH_ID)).thenReturn(List.of(
+                step(1, 0, null, 20)));
+        when(productClient.getDiscoveredOperationsByIds(List.of(20))).thenReturn(List.of(fromProducts));
+
+        UseCaseOperationNodeDTO node = service.getOperationsTree(PROJECT_ID, USE_CASE_ID, null).get(0);
+
+        assertThat(node.getDiscoveredOperation()).isSameAs(fromProducts);
+        assertThat(node.getDiscoveredOperation().getOperation()).isSameAs(operation);
+        assertThat(node.getDiscoveredOperation().getOperation().getTechCapability()).isEqualTo(techCapability);
+        assertThat(node.getDiscoveredOperation().getOperation().getSla()).isEqualTo(sla);
+        assertThat(node.getDiscoveredOperation().getOperation().getConnectedInterface()).isEqualTo(connectedInterface);
+        assertThat(node.getDiscoveredOperation().getOperation().getConnectedInterface().getContainer())
+                .isEqualTo(container);
+        assertThat(node.getDiscoveredOperation().getDiscoveredInterface().getProduct()).isEqualTo(product);
+        verify(productClient).getDiscoveredOperationsByIds(List.of(20));
+        verify(productClient, never()).upsertUseCaseOperations(any(), any());
+    }
+
+    @Test
+    @DisplayName("Дочерний узел с operation = null из ответа продуктов остаётся null")
+    void keepsNullOperationFromProductsOnChildNode() {
+        DiscoveredOperationByIdsDTO root = DiscoveredOperationByIdsDTO.builder()
+                .id(20)
+                .name("createOrder")
+                .operation(OperationWithTechCapabilityDTO.builder()
+                        .id(100)
+                        .name("createOrder")
+                        .type("POST")
+                        .tcId(3)
+                        .build())
+                .build();
+        DiscoveredOperationByIdsDTO child = DiscoveredOperationByIdsDTO.builder()
+                .id(21)
+                .name("reserveStock")
+                .isPlanned(true)
+                .discoveredInterface(DiscoveredInterfaceByIdsDTO.builder()
+                        .id(6)
+                        .name("stock-api")
+                        .productPlanned("STOCK")
+                        .product(null)
+                        .build())
+                .operation(null)
+                .build();
+        when(usOperationRelationRepository.findAllByUseCaseBranchId(BRANCH_ID)).thenReturn(List.of(
+                step(1, 0, null, 20),
+                step(2, 1, 20, 21)));
+        when(productClient.getDiscoveredOperationsByIds(List.of(20, 21))).thenReturn(List.of(root, child));
+
+        UseCaseOperationNodeDTO treeRoot = service.getOperationsTree(PROJECT_ID, USE_CASE_ID, null).get(0);
+
+        assertThat(treeRoot.getDiscoveredOperation().getOperation()).isNotNull();
+        assertThat(treeRoot.getChildren().get(0).getDiscoveredOperation()).isSameAs(child);
+        assertThat(treeRoot.getChildren().get(0).getDiscoveredOperation().getOperation()).isNull();
+        assertThat(treeRoot.getChildren().get(0).getDiscoveredOperation().getDiscoveredInterface().getProduct())
+                .isNull();
+        assertThat(treeRoot.getChildren().get(0).getDiscoveredOperation().getDiscoveredInterface().getProductPlanned())
+                .isEqualTo("STOCK");
     }
 
     @Test

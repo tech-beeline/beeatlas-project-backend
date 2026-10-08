@@ -85,7 +85,9 @@ public class ProjectUseCaseController {
     @Operation(summary = "Получить дерево вызовов методов ветки use case",
             description = "Возвращает методы выбранной ветки use case в виде дерева вызовов: "
                     + "корни — стартовые методы, дочерние узлы — методы, которые они вызывают. "
-                    + "Каждый узел содержит информацию о методе, его интерфейсе и технической возможности. "
+                    + "Атрибуты метода — элемент POST /api/v1/discovered-operation/by-ids целиком: "
+                    + "у operation только id, name, type, tcId, techCapability, sla со всеми колонками, "
+                    + "interface с id и code и container с id и code. "
                     + "Ветка по умолчанию — main. Если в ветке нет методов, возвращается пустой список.")
     public ResponseEntity<List<UseCaseOperationNodeDTO>> getUseCaseOperations(
             @Parameter(description = "Идентификатор проекта") @PathVariable @Positive Integer projectId,
